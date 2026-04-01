@@ -2,9 +2,17 @@ function trimTrailingSlash(value: string): string {
   return value.replace(/\/+$/, "");
 }
 
+function isAutoBase(value: string): boolean {
+  return value.trim().toLowerCase() === "auto";
+}
+
 function shouldUseSameOriginProxy(base: string): boolean {
   if (!base) {
     return true;
+  }
+
+  if (isAutoBase(base)) {
+    return false;
   }
 
   try {
@@ -16,7 +24,20 @@ function shouldUseSameOriginProxy(base: string): boolean {
 }
 
 export function getBrowserApiBase(): string {
-  const configured = trimTrailingSlash((process.env.NEXT_PUBLIC_API_BASE ?? "").trim());
+  const configuredRaw = (process.env.NEXT_PUBLIC_API_BASE ?? "").trim();
+  const configured = trimTrailingSlash(configuredRaw);
+
+  // Special case: let the browser call backend directly via current hostname:8000.
+  // Useful when frontend is opened from another machine and "localhost" would point to the client.
+  if (configured && isAutoBase(configured)) {
+    if (typeof window === "undefined") {
+      return "";
+    }
+    const protocol = window.location.protocol;
+    const hostname = window.location.hostname;
+    return `${protocol}//${hostname}:8000`;
+  }
+
   return shouldUseSameOriginProxy(configured) ? "" : configured;
 }
 
