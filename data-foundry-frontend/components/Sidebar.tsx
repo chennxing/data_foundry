@@ -1,5 +1,7 @@
 "use client";
 
+import { useEffect, useMemo, useState } from "react";
+
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import {
@@ -12,9 +14,12 @@ import {
   ChevronRight,
   BookOpen,
   Settings,
+  SlidersHorizontal,
+  Users,
 } from "lucide-react";
 import { LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { canViewCollectionTasks, getCurrentUser, subscribePermissionsChanged, type UserRole } from "@/lib/auth-permissions";
 
 type NavChildType = {
   name: string;
@@ -104,7 +109,16 @@ const mainNav: NavItemType[] = [
       { name: "监控", href: "/ops-monitoring", icon: Activity },
     ],
   },
-  { name: "设置", href: "/settings", icon: Settings },
+  {
+    name: "系统配置",
+    href: "/settings/model-config",
+    icon: Settings,
+    match: ({ pathname }) => pathname === "/settings" || pathname.startsWith("/settings/"),
+    children: [
+      { name: "模型配置", href: "/settings/model-config", icon: SlidersHorizontal },
+      { name: "权限配置", href: "/settings/permissions", icon: Users },
+    ],
+  },
 ];
 
 export default function Sidebar() {
@@ -114,6 +128,21 @@ export default function Sidebar() {
   const tab = searchParams?.get("tab") ?? null;
   const nav = searchParams?.get("nav") ?? null;
   const context: MatchContext = { pathname: safePathname, tab, nav };
+
+  const [currentRole, setCurrentRole] = useState<UserRole>("ADMIN");
+
+  useEffect(() => {
+    const refresh = () => setCurrentRole(getCurrentUser().role);
+    refresh();
+    return subscribePermissionsChanged(refresh);
+  }, []);
+
+  const visibleNav = useMemo(() => {
+    if (canViewCollectionTasks(currentRole)) {
+      return mainNav;
+    }
+    return mainNav.filter((item) => item.href !== "/collection-tasks");
+  }, [currentRole]);
 
   const isChildActive = (child: NavChildType) => {
     return safePathname === child.href || safePathname.startsWith(`${child.href}/`);
@@ -175,7 +204,7 @@ export default function Sidebar() {
       
       <div className="flex-1 overflow-y-auto py-4">
         <nav className="space-y-1 px-2">
-          {mainNav.map((item) => <NavItem key={item.name} item={item} />)}
+          {visibleNav.map((item) => <NavItem key={item.name} item={item} />)}
         </nav>
       </div>
     </div>
