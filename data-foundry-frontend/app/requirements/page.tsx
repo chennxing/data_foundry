@@ -1,10 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { ReactNode, useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { Project, Requirement, WideTable } from "@/lib/types";
 import { fetchProjects, fetchRequirementWideTables } from "@/lib/api-client";
-import { ClipboardList, FolderKanban, ArrowRight } from "lucide-react";
+import { ClipboardList } from "lucide-react";
 
 export default function RequirementsPage() {
   const [projects, setProjects] = useState<Project[]>([]);
@@ -31,6 +31,27 @@ export default function RequirementsPage() {
       .catch(() => {});
   }, []);
 
+  const projectById = useMemo(() => {
+    const map = new Map<string, Project>();
+    for (const project of projects) {
+      map.set(project.id, project);
+    }
+    return map;
+  }, [projects]);
+
+  const wideTableByRequirementId = useMemo(() => {
+    const map = new Map<string, WideTable>();
+    for (const wideTable of wideTables) {
+      map.set(wideTable.requirementId, wideTable);
+    }
+    return map;
+  }, [wideTables]);
+
+  const statusLabel = (status: Requirement["status"]) => {
+    if (status === "running") return "运行中";
+    return "未运行";
+  };
+
   return (
     <div className="p-8 space-y-6">
       <header className="space-y-1">
@@ -38,110 +59,80 @@ export default function RequirementsPage() {
           <ClipboardList className="h-5 w-5 text-primary" />
           需求清单
         </h1>
-        <p className="text-sm text-muted-foreground">
-          跨项目查看需求阶段、当前配置和关联宽表状态。
-        </p>
+        <p className="text-sm text-muted-foreground">直接查看需求列表与关联宽表信息。</p>
       </header>
 
-      <section className="rounded-xl border bg-card p-6 space-y-4">
-        <h2 className="font-semibold">项目视图</h2>
-        <div className="grid gap-4 md:grid-cols-2">
-          {projects.map((project) => {
-            const reqCount = requirements.filter((r) => r.projectId === project.id).length;
-            return (
-              <div key={project.id} className="rounded-lg border p-4 bg-muted/10">
-                <div className="flex items-center">
-                  <div className="font-semibold flex items-center gap-2">
-                    <FolderKanban className="h-4 w-4 text-primary" />
-                    {project.name}
-                  </div>
-                </div>
-                <p className="text-xs text-muted-foreground mt-2">{project.description}</p>
-                <div className="text-xs mt-3">
-                  关联需求：<span className="font-semibold">{reqCount}</span>
-                </div>
-              </div>
-            );
-          })}
+      <section className="rounded-xl border bg-card p-6 shadow-sm">
+        <div className="flex items-center justify-between gap-4">
+          <h2 className="font-semibold">需求列表</h2>
+          <div className="text-xs text-muted-foreground">共 {requirements.length} 条</div>
+        </div>
+
+        <div className="mt-4 overflow-x-auto">
+          <table className="w-full min-w-[1080px] border-collapse text-sm">
+            <thead>
+              <tr className="border-b text-left text-muted-foreground">
+                <th className="py-3 pr-4 font-medium">需求</th>
+                <th className="py-3 pr-4 font-medium">所属项目</th>
+                <th className="py-3 pr-4 font-medium">负责人/执行人</th>
+                <th className="py-3 pr-4 font-medium">关联宽表</th>
+                <th className="py-3 pr-4 font-medium">状态流转</th>
+                <th className="py-3 pr-2 font-medium">操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              {requirements.map((req) => {
+                const project = projectById.get(req.projectId);
+                const reqWideTable = req.wideTable ?? wideTableByRequirementId.get(req.id);
+                const wideTableLabel = reqWideTable ? `${reqWideTable.name} (${reqWideTable.id})` : "-";
+
+                return (
+                  <tr key={req.id} className="border-b last:border-b-0 hover:bg-muted/30">
+                    <td className="py-4 pr-4 align-top">
+                      <div className="space-y-1">
+                        <div className="max-w-[320px] truncate font-medium text-foreground" title={req.title}>
+                          {req.title}
+                        </div>
+                        <div className="font-mono text-xs text-muted-foreground">{req.id}</div>
+                      </div>
+                    </td>
+                    <td className="py-4 pr-4 align-top">
+                      <div className="max-w-[200px] truncate" title={project?.name ?? "-"}>
+                        {project?.name ?? "-"}
+                      </div>
+                    </td>
+                    <td className="py-4 pr-4 align-top">
+                      <div className="space-y-1 text-muted-foreground">
+                        <div>业务：{req.owner || "-"}</div>
+                        <div>执行：{req.assignee || "-"}</div>
+                      </div>
+                    </td>
+                    <td className="py-4 pr-4 align-top">
+                      <div className="max-w-[320px] truncate" title={reqWideTable ? wideTableLabel : "-"}>
+                        {wideTableLabel}
+                      </div>
+                      {reqWideTable ? (
+                        <div className="mt-1 text-xs text-muted-foreground">
+                          {reqWideTable.schema.columns.length} 列，{reqWideTable.recordCount} 条记录
+                        </div>
+                      ) : null}
+                    </td>
+                    <td className="py-4 pr-4 align-top">{statusLabel(req.status)}</td>
+                    <td className="py-4 pr-2 align-top">
+                      <Link
+                        href={`/projects/${req.projectId}/requirements/${req.id}?nav=requirements&view=requirement&tab=requirement`}
+                        className="text-primary hover:underline"
+                      >
+                        进入需求
+                      </Link>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
       </section>
-
-      <section className="rounded-xl border bg-card p-6">
-        <h2 className="font-semibold mb-3">需求定义规范</h2>
-        <div className="grid gap-4 md:grid-cols-2">
-          <div className="rounded-lg border p-4 bg-muted/10">
-            <div className="text-sm font-semibold mb-2">需求级别字段</div>
-            <ul className="list-disc pl-5 text-sm text-muted-foreground space-y-1">
-              <li>需求标题</li>
-              <li>背景知识</li>
-              <li>业务负责人 / 执行人</li>
-            </ul>
-          </div>
-          <div className="rounded-lg border p-4 bg-muted/10">
-            <div className="text-sm font-semibold mb-2">宽表级别字段</div>
-            <ul className="list-disc pl-5 text-sm text-muted-foreground space-y-1">
-              <li>每个需求仅关联一张宽表</li>
-              <li>表结构 Schema（列定义、列分类）</li>
-              <li>维度范围（仅维度列参与拆分）</li>
-              <li>属性列定义（随行携带，不参与拆分）</li>
-              <li>业务日期范围与频率</li>
-              <li>指标组定义</li>
-              <li>调度规则</li>
-            </ul>
-          </div>
-        </div>
-      </section>
-
-      <section className="space-y-4">
-        <h2 className="font-semibold">需求列表</h2>
-        {requirements.map((req) => {
-          const project = projects.find((p) => p.id === req.projectId);
-          const reqWideTable = req.wideTable ?? wideTables.find((wt) => wt.requirementId === req.id);
-          return (
-            <div key={req.id} className="rounded-xl border bg-card p-5 space-y-4">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="text-xs px-2 py-1 rounded border bg-muted/30">{req.id}</span>
-                <h3 className="font-semibold">{req.title}</h3>
-              </div>
-              <div className="grid gap-4 xl:grid-cols-3">
-                <Info title="需求信息">
-                  <p>背景知识：{req.backgroundKnowledge ?? req.businessGoal ?? "-"}</p>
-
-                </Info>
-                <Info title="宽表与数据">
-                  <p>关联宽表：{reqWideTable ? reqWideTable.name : "-"}</p>
-                  <p>
-                    宽表状态：
-                    {reqWideTable
-                      ? `${reqWideTable.schema.columns.length} 列，${reqWideTable.recordCount} 条记录`
-                      : "未配置"}
-                  </p>
-                </Info>
-                <Info title="操作">
-                  <div>
-                    <Link
-                      href={`/projects/${req.projectId}/requirements/${req.id}?nav=requirements&view=requirement&tab=requirement`}
-                      className="inline-flex items-center gap-1 text-primary text-sm hover:underline mt-2"
-                    >
-                      查看需求详情
-                      <ArrowRight className="h-3 w-3" />
-                    </Link>
-                  </div>
-                </Info>
-              </div>
-            </div>
-          );
-        })}
-      </section>
-    </div>
-  );
-}
-
-function Info({ title, children }: { title: string; children: ReactNode }) {
-  return (
-    <div className="rounded-lg border bg-muted/10 p-4">
-      <div className="text-xs font-semibold mb-2">{title}</div>
-      <div className="text-xs text-muted-foreground space-y-1">{children}</div>
     </div>
   );
 }

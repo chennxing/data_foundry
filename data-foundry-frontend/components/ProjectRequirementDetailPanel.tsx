@@ -18,11 +18,10 @@ import { hasWideTableBusinessDateDimension } from "@/lib/wide-table-mode";
 import { cn } from "@/lib/utils";
 import RequirementDefinitionForm from "@/components/RequirementDefinitionForm";
 import RequirementTasksPanel from "@/components/RequirementTasksPanel";
-import RequirementDataProcessingPanel from "@/components/RequirementDataProcessingPanel";
 import RequirementAcceptancePanel from "@/components/RequirementAcceptancePanel";
 
 
-type TabKey = "requirement" | "tasks" | "processing" | "acceptance";
+type TabKey = "requirement" | "tasks" | "acceptance";
 type NavSource = "projects" | "requirements" | "tasks" | "acceptance";
 
 type Props = {
@@ -235,7 +234,6 @@ export default function ProjectRequirementDetailPanel({
   const buildDetailHref = (tab: TabKey) => `${basePath}?${[...baseQueryParams, `tab=${tab}`].join("&")}`;
   const requirementTabHref = buildDetailHref("requirement");
   const tasksTabHref = buildDetailHref("tasks");
-  const processingTabHref = buildDetailHref("processing");
   const acceptanceTabHref = buildDetailHref("acceptance");
   const backTarget = resolveBackTarget(project.id, resolvedNavSource, viewMode);
   const isRequirementSubmitted = requirement.status !== "draft";
@@ -244,22 +242,23 @@ export default function ProjectRequirementDetailPanel({
     || requestedTab === "acceptance"
     || requestedTab === "audit";
   const shouldForceRequirementTab = !isRequirementSubmitted && !isRequirementOnlyView && !isTasksOnlyView && !isAcceptanceOnlyView && isDownstreamTabRequested;
+  const initialTaskSubTab = requestedTab === "processing" ? "output" : undefined;
   const activeTab: TabKey =
     isRequirementOnlyView
       ? "requirement"
-      : isTasksOnlyView
+    : isTasksOnlyView
       ? "tasks"
-      : isAcceptanceOnlyView
+    : isAcceptanceOnlyView
       ? "acceptance"
-      : shouldForceRequirementTab
+    : shouldForceRequirementTab
       ? "requirement"
-      : requestedTab === "tasks"
+    : requestedTab === "tasks"
       ? "tasks"
-      : requestedTab === "processing"
-      ? "processing"
-      : requestedTab === "acceptance" || requestedTab === "audit"
+    : requestedTab === "processing"
+      ? "tasks"
+    : requestedTab === "acceptance" || requestedTab === "audit"
       ? "acceptance"
-      : "requirement";
+    : "requirement";
 
   return (
     <div className="p-8 space-y-6">
@@ -280,42 +279,22 @@ export default function ProjectRequirementDetailPanel({
         </p>
       </header>
 
-      {!isAcceptanceOnlyView ? (
+      {!isAcceptanceOnlyView && !isRequirementOnlyView && !isTasksOnlyView ? (
         <section className="rounded-xl border bg-card p-3">
-          {isRequirementOnlyView ? (
-            <div className="grid auto-rows-fr gap-2 grid-cols-1">
-              <TabLink
-                href={requirementTabHref}
-                active
-              >
-                需求
-              </TabLink>
-            </div>
-          ) : isTasksOnlyView ? (
-            <div className="grid auto-rows-fr gap-2 grid-cols-1">
-              <TabLink href={tasksTabHref} active>
-                任务
-              </TabLink>
-            </div>
-          ) : (
-            <div className="grid auto-rows-fr gap-2 grid-cols-4">
-              <TabLink
-                href={requirementTabHref}
-                active={activeTab === "requirement"}
-              >
-                需求
-              </TabLink>
-              <TabLink href={tasksTabHref} active={activeTab === "tasks"} disabled={!isRequirementSubmitted}>
-                任务
-              </TabLink>
-              <TabLink href={processingTabHref} active={activeTab === "processing"} disabled={!isRequirementSubmitted}>
-                数据产出
-              </TabLink>
-              <TabLink href={acceptanceTabHref} active={activeTab === "acceptance"} disabled={!isRequirementSubmitted}>
-                验收
-              </TabLink>
-            </div>
-          )}
+          <div className="grid auto-rows-fr gap-2 grid-cols-3">
+            <TabLink
+              href={requirementTabHref}
+              active={activeTab === "requirement"}
+            >
+              需求
+            </TabLink>
+            <TabLink href={tasksTabHref} active={activeTab === "tasks"} disabled={!isRequirementSubmitted}>
+              任务
+            </TabLink>
+            <TabLink href={acceptanceTabHref} active={activeTab === "acceptance"} disabled={!isRequirementSubmitted}>
+              验收
+            </TabLink>
+          </div>
         </section>
       ) : null}
 
@@ -363,6 +342,7 @@ export default function ProjectRequirementDetailPanel({
       {activeTab === "tasks" ? (
         <RequirementTasksPanel
           requirement={requirement}
+          initialSubTab={initialTaskSubTab}
           navSource={resolvedNavSource}
           wideTables={reqWideTables}
           wideTableRecords={reqWideTableRecords}
@@ -397,19 +377,6 @@ export default function ProjectRequirementDetailPanel({
               ...nextTaskGroupRuns,
             ]);
           }}
-        />
-      ) : null}
-
-      {activeTab === "processing" ? (
-        <RequirementDataProcessingPanel
-          requirement={requirement}
-          wideTables={reqWideTables}
-          wideTableRecords={reqWideTableRecords}
-          taskGroups={reqTaskGroups}
-          fetchTasks={reqFetchTasks}
-          scheduleJobs={reqTaskGroupRuns}
-          onRequirementChange={handleRequirementChange}
-          onRefreshData={refreshRequirementData}
         />
       ) : null}
 

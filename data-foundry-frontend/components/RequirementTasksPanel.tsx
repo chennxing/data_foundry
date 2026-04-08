@@ -40,6 +40,7 @@ import {
 } from "@/lib/task-group-execution";
 import { resolveRequirementDataUpdateEnabled } from "@/lib/requirement-data-update";
 import FetchTaskDetailPopup from "@/components/FetchTaskDetailPopup";
+import RequirementDataProcessingPanel from "@/components/RequirementDataProcessingPanel";
 import {
   getTaskBlockSurfaceClass,
   getTaskStatusBadgeClass,
@@ -75,6 +76,7 @@ import {
 
 type Props = {
   requirement: Requirement;
+  initialSubTab?: "prompts" | "tasks" | "output";
   wideTables: WideTable[];
   wideTableRecords: WideTableRecord[];
   taskGroups: TaskGroup[];
@@ -99,12 +101,12 @@ const triggerLabel: Record<string, string> = {
   trial: "试运行",
 };
 
-type TaskSubTabKey = "prompts" | "trial" | "tasks";
+type TaskSubTabKey = "prompts" | "tasks" | "output";
 
 const taskSubTabs: Array<{ key: TaskSubTabKey; label: string }> = [
   { key: "prompts", label: "采集提示词管理" },
-  { key: "trial", label: "试运行" },
   { key: "tasks", label: "采集任务" },
+  { key: "output", label: "数据产出" },
 ];
 
 const DEFAULT_INDICATOR_GROUP_PREFIX = "ig_default_";
@@ -126,6 +128,7 @@ const buildDefaultIndicatorGroup = (
 
 export default function RequirementTasksPanel({
   requirement,
+  initialSubTab,
   wideTables,
   wideTableRecords,
   taskGroups,
@@ -142,6 +145,7 @@ export default function RequirementTasksPanel({
   navSource,
 }: Props) {
   const searchParams = useSearchParams();
+  const requestedSubTab = searchParams?.get("sub");
   const [selectedWtId, setSelectedWtId] = useState<string>(wideTables[0]?.id ?? "");
   const [expandedTgId, setExpandedTgId] = useState<string | null>(null);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
@@ -158,9 +162,18 @@ export default function RequirementTasksPanel({
   const [trialMaxRows, setTrialMaxRows] = useState(20);
   const [trialRunMessage, setTrialRunMessage] = useState("");
   const [isStartingTrialRun, setIsStartingTrialRun] = useState(false);
+  const [isTrialModalOpen, setIsTrialModalOpen] = useState(false);
   const [runningTaskGroupIds, setRunningTaskGroupIds] = useState<string[]>([]);
   const [runningTaskIds, setRunningTaskIds] = useState<string[]>([]);
-  const [activeTaskSubTab, setActiveTaskSubTab] = useState<TaskSubTabKey>("prompts");
+  const [activeTaskSubTab, setActiveTaskSubTab] = useState<TaskSubTabKey>(() => {
+    if (requestedSubTab === "prompts" || requestedSubTab === "tasks" || requestedSubTab === "output") {
+      return requestedSubTab;
+    }
+    if (initialSubTab === "prompts" || initialSubTab === "tasks" || initialSubTab === "output") {
+      return initialSubTab;
+    }
+    return "prompts";
+  });
   const requestedWtId = searchParams?.get("wt");
   const requestedTaskGroupId = searchParams?.get("tg");
   const requestedTaskId = searchParams?.get("task");
@@ -183,6 +196,12 @@ export default function RequirementTasksPanel({
       setActiveTaskSubTab("tasks");
     }
   }, [requestedTaskGroupId, requestedTaskId]);
+
+  useEffect(() => {
+    if (requestedSubTab === "prompts" || requestedSubTab === "tasks" || requestedSubTab === "output") {
+      setActiveTaskSubTab(requestedSubTab);
+    }
+  }, [requestedSubTab]);
 
   const selectedWt = useMemo(
     () => wideTables.find((wt) => wt.id === selectedWtId),
@@ -1232,20 +1251,6 @@ export default function RequirementTasksPanel({
           </div>
         </section>
       ) : null}
-      <section className="rounded-xl border bg-card p-6 space-y-4">
-        <div className="flex items-center gap-2">
-          <ListTree className="h-4 w-4 text-primary" />
-          <h2 className="font-semibold">执行</h2>
-        </div>
-        <p className="text-xs text-muted-foreground">
-          默认情况下不要求对指标分组，系统会用统一提示词生成任务组；如需对不同指标组配置不同提示词，可通过指标分组将指标拆分后再生成任务组。
-        </p>
-        {needsScopeRefresh ? (
-          <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-            请先回到【需求】确认数据范围与时间范围，再回到这里配置指标分组并生成任务组。
-          </div>
-        ) : null}
-      </section>
 
       {/* 宽表选择 */}
       {wideTables.length > 1 ? (
@@ -1445,150 +1450,17 @@ export default function RequirementTasksPanel({
         </section>
       ) : null}
 
-      {selectedWt && activeTaskSubTab === "trial" ? (
-        <section className="rounded-xl border bg-card p-6 space-y-4">
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <h3 className="font-semibold">试运行</h3>
-              <p className="mt-1 text-xs text-muted-foreground">
-                勾选少量日期与维度值后，对所有指标发起小范围采集。提示词沿用下方采集提示词管理中的配置。
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={() => void handleStartTrialRun()}
-              disabled={!canStartTrialRun || isStartingTrialRun}
-              className={cn(
-                "rounded-md px-3 py-1.5 text-xs font-medium",
-                !canStartTrialRun || isStartingTrialRun
-                  ? "cursor-not-allowed bg-muted text-muted-foreground"
-                  : "bg-primary text-primary-foreground hover:opacity-90",
-              )}
-            >
-              {isStartingTrialRun ? "试运行中..." : "开始试运行"}
-            </button>
-          </div>
-
-          {taskPlanBlockerMessage ? (
-            <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-              {taskPlanBlockerMessage}
-            </div>
-          ) : null}
-
-          {usesBusinessDateAxis ? (
-            <div className="space-y-2">
-              <div className="text-xs font-medium text-muted-foreground">选择日期</div>
-              <div className="flex flex-wrap gap-2">
-                {trialAvailableBusinessDates.length === 0 ? (
-                  <span className="text-xs text-muted-foreground">当前范围暂无可选业务日期。</span>
-                ) : trialAvailableBusinessDates.slice(0, 18).map((businessDate) => (
-                  <button
-                    key={businessDate}
-                    type="button"
-                    onClick={() => handleToggleTrialBusinessDate(businessDate)}
-                    className={cn(
-                      "rounded-full border px-2.5 py-1 text-[11px]",
-                      trialBusinessDates.includes(businessDate)
-                        ? "border-primary bg-primary/10 text-primary"
-                        : "bg-background text-muted-foreground hover:border-primary/40 hover:text-foreground",
-                    )}
-                  >
-                    {businessDate}
-                  </button>
-                ))}
-              </div>
-            </div>
-          ) : null}
-
-          <div className="space-y-3">
-            <div className="text-xs font-medium text-muted-foreground">选择维度值</div>
-            {trialDimensionColumns.length === 0 ? (
-              <div className="rounded-lg border border-dashed bg-background px-4 py-4 text-xs text-muted-foreground">
-                当前宽表没有可筛选维度，将按单次快照范围抽样试运行。
-              </div>
-            ) : (
-              <div className="grid gap-3 md:grid-cols-2">
-                {trialDimensionColumns.map((column) => {
-                  const values = trialAvailableDimensionValues[column.name] ?? [];
-                  const selectedValues = trialDimensionValues[column.name] ?? [];
-                  return (
-                    <div key={column.id} className="rounded-lg border bg-background px-4 py-3">
-                      <div className="flex items-center justify-between gap-3">
-                        <div>
-                          <div className="text-sm font-medium">{column.chineseName ?? column.name}</div>
-                          <div className="text-[11px] text-muted-foreground">{column.name}</div>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => setTrialDimensionValues((current) => ({ ...current, [column.name]: [] }))}
-                          className="text-[11px] text-muted-foreground hover:text-foreground"
-                        >
-                          全部
-                        </button>
-                      </div>
-                      <div className="mt-3 flex flex-wrap gap-2">
-                        {values.length === 0 ? (
-                          <span className="text-[11px] text-muted-foreground">暂无可选值。</span>
-                        ) : values.slice(0, 12).map((value) => (
-                          <button
-                            key={value}
-                            type="button"
-                            onClick={() => handleToggleTrialDimensionValue(column.name, value)}
-                            className={cn(
-                              "rounded-full border px-2.5 py-1 text-[11px]",
-                              selectedValues.includes(value)
-                                ? "border-primary bg-primary/10 text-primary"
-                                : "bg-background text-muted-foreground hover:border-primary/40 hover:text-foreground",
-                            )}
-                          >
-                            {value}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-
-          <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-muted/10 px-4 py-3">
-            <div className="text-xs text-muted-foreground">
-              预计试运行 <span className="font-medium text-foreground">{trialEstimatedRows}</span> 行，
-              生成 <span className="font-medium text-foreground">{trialEstimatedTaskCount}</span> 个采集任务。
-              {trialFilteredRecords.length > trialMaxRows ? ` 当前筛选命中 ${trialFilteredRecords.length} 行，将按上限抽样。` : ""}
-            </div>
-            <label className="flex items-center gap-2 text-xs text-muted-foreground">
-              最大采样行数
-              <input
-                type="number"
-                min={1}
-                max={200}
-                value={trialMaxRows}
-                onChange={(event) => setTrialMaxRows(Math.min(200, Math.max(1, Number(event.target.value) || 1)))}
-                className="w-20 rounded-md border bg-background px-2 py-1 text-xs text-foreground"
-              />
-            </label>
-          </div>
-
-          {latestTrialTaskGroup ? (
-            <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-900">
-              <span>最近一次试运行：{latestTrialTaskGroup.partitionLabel || latestTrialTaskGroup.businessDateLabel || latestTrialTaskGroup.id}</span>
-              <Link
-                href={`/projects/${requirement.projectId}/requirements/${requirement.id}?${navQuery}view=acceptance&tab=acceptance&tg=${latestTrialTaskGroup.id}`}
-                className="font-medium text-primary hover:underline"
-              >
-                查看试运行数据
-              </Link>
-            </div>
-          ) : null}
-
-          {trialRunMessage ? (
-            <div className="rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-900">
-              {trialRunMessage}
-            </div>
-          ) : null}
-        </section>
+      {selectedWt && activeTaskSubTab === "output" ? (
+        <RequirementDataProcessingPanel
+          requirement={requirement}
+          wideTables={wideTables}
+          wideTableRecords={wideTableRecords}
+          taskGroups={taskGroups}
+          fetchTasks={fetchTasks}
+          scheduleJobs={scheduleJobs}
+          onRequirementChange={onRequirementChange}
+          onRefreshData={onRefreshData}
+        />
       ) : null}
 
       {activeTaskSubTab === "prompts" && selectedWt && hasIndicatorColumns && isIndicatorGroupModalOpen ? (
@@ -1749,6 +1621,168 @@ export default function RequirementTasksPanel({
                   })}
                 </div>
               )}
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {selectedWt && isTrialModalOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 p-4">
+          <div className="w-full max-w-4xl rounded-xl border bg-card shadow-xl">
+            <div className="flex items-start justify-between gap-3 border-b px-5 py-4">
+              <div className="space-y-1">
+                <h3 className="text-base font-semibold">试运行</h3>
+                <p className="text-xs text-muted-foreground">
+                  勾选少量日期与维度值后，对所有指标发起小范围采集。提示词沿用“采集提示词管理”中已保存的配置。
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsTrialModalOpen(false)}
+                className="rounded-md border px-3 py-1.5 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
+              >
+                关闭
+              </button>
+            </div>
+
+            <div className="space-y-4 px-5 py-5">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div />
+                <button
+                  type="button"
+                  onClick={() => void handleStartTrialRun()}
+                  disabled={!canStartTrialRun || isStartingTrialRun}
+                  className={cn(
+                    "rounded-md px-3 py-1.5 text-xs font-medium",
+                    !canStartTrialRun || isStartingTrialRun
+                      ? "cursor-not-allowed bg-muted text-muted-foreground"
+                      : "bg-primary text-primary-foreground hover:opacity-90",
+                  )}
+                >
+                  {isStartingTrialRun ? "试运行中..." : "开始试运行"}
+                </button>
+              </div>
+
+              {taskPlanBlockerMessage ? (
+                <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                  {taskPlanBlockerMessage}
+                </div>
+              ) : null}
+
+              {usesBusinessDateAxis ? (
+                <div className="space-y-2">
+                  <div className="text-xs font-medium text-muted-foreground">选择日期</div>
+                  <div className="flex flex-wrap gap-2">
+                    {trialAvailableBusinessDates.length === 0 ? (
+                      <span className="text-xs text-muted-foreground">当前范围暂无可选业务日期。</span>
+                    ) : trialAvailableBusinessDates.slice(0, 18).map((businessDate) => (
+                      <button
+                        key={businessDate}
+                        type="button"
+                        onClick={() => handleToggleTrialBusinessDate(businessDate)}
+                        className={cn(
+                          "rounded-full border px-2.5 py-1 text-[11px]",
+                          trialBusinessDates.includes(businessDate)
+                            ? "border-primary bg-primary/10 text-primary"
+                            : "bg-background text-muted-foreground hover:border-primary/40 hover:text-foreground",
+                        )}
+                      >
+                        {businessDate}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+
+              <div className="space-y-3">
+                <div className="text-xs font-medium text-muted-foreground">选择维度值</div>
+                {trialDimensionColumns.length === 0 ? (
+                  <div className="rounded-lg border border-dashed bg-background px-4 py-4 text-xs text-muted-foreground">
+                    当前宽表没有可筛选维度，将按单次快照范围抽样试运行。
+                  </div>
+                ) : (
+                  <div className="grid gap-3 md:grid-cols-2">
+                    {trialDimensionColumns.map((column) => {
+                      const values = trialAvailableDimensionValues[column.name] ?? [];
+                      const selectedValues = trialDimensionValues[column.name] ?? [];
+                      return (
+                        <div key={column.id} className="rounded-lg border bg-background px-4 py-3">
+                          <div className="flex items-center justify-between gap-3">
+                            <div>
+                              <div className="text-sm font-medium">{column.chineseName ?? column.name}</div>
+                              <div className="text-[11px] text-muted-foreground">{column.name}</div>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => setTrialDimensionValues((current) => ({ ...current, [column.name]: [] }))}
+                              className="text-[11px] text-muted-foreground hover:text-foreground"
+                            >
+                              全部
+                            </button>
+                          </div>
+                          <div className="mt-3 flex flex-wrap gap-2">
+                            {values.length === 0 ? (
+                              <span className="text-[11px] text-muted-foreground">暂无可选值。</span>
+                            ) : values.slice(0, 12).map((value) => (
+                              <button
+                                key={value}
+                                type="button"
+                                onClick={() => handleToggleTrialDimensionValue(column.name, value)}
+                                className={cn(
+                                  "rounded-full border px-2.5 py-1 text-[11px]",
+                                  selectedValues.includes(value)
+                                    ? "border-primary bg-primary/10 text-primary"
+                                    : "bg-background text-muted-foreground hover:border-primary/40 hover:text-foreground",
+                                )}
+                              >
+                                {value}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-muted/10 px-4 py-3">
+                <div className="text-xs text-muted-foreground">
+                  预计试运行 <span className="font-medium text-foreground">{trialEstimatedRows}</span> 行，
+                  生成 <span className="font-medium text-foreground">{trialEstimatedTaskCount}</span> 个采集任务。
+                  {trialFilteredRecords.length > trialMaxRows ? ` 当前筛选命中 ${trialFilteredRecords.length} 行，将按上限抽样。` : ""}
+                </div>
+                <label className="flex items-center gap-2 text-xs text-muted-foreground">
+                  最大采样行数
+                  <input
+                    type="number"
+                    min={1}
+                    max={200}
+                    value={trialMaxRows}
+                    onChange={(event) => setTrialMaxRows(Math.min(200, Math.max(1, Number(event.target.value) || 1)))}
+                    className="w-20 rounded-md border bg-background px-2 py-1 text-xs text-foreground"
+                  />
+                </label>
+              </div>
+
+              {latestTrialTaskGroup ? (
+                <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-900">
+                  <span>最近一次试运行：{latestTrialTaskGroup.partitionLabel || latestTrialTaskGroup.businessDateLabel || latestTrialTaskGroup.id}</span>
+                  <Link
+                    href={`/projects/${requirement.projectId}/requirements/${requirement.id}?${navQuery}tab=tasks&sub=output`}
+                    className="font-medium text-primary hover:underline"
+                    onClick={() => setIsTrialModalOpen(false)}
+                  >
+                    查看试运行数据
+                  </Link>
+                </div>
+              ) : null}
+
+              {trialRunMessage ? (
+                <div className="rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-900">
+                  {trialRunMessage}
+                </div>
+              ) : null}
             </div>
           </div>
         </div>
@@ -1932,8 +1966,24 @@ export default function RequirementTasksPanel({
                     </details>
                   );
                 })}
-            </div>
-          )}
+              </div>
+            )}
+
+          <div className="flex justify-end pt-2">
+            <button
+              type="button"
+              onClick={() => setIsTrialModalOpen(true)}
+              disabled={!isDefinitionSubmitted || isPersistingPrompts}
+              className={cn(
+                "rounded-md px-4 py-2 text-sm font-medium",
+                !isDefinitionSubmitted || isPersistingPrompts
+                  ? "cursor-not-allowed bg-muted text-muted-foreground"
+                  : "bg-primary text-primary-foreground hover:opacity-90",
+              )}
+            >
+              试运行
+            </button>
+          </div>
         </section>
       ) : null}
 
