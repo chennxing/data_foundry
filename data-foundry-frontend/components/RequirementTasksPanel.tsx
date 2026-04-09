@@ -41,6 +41,7 @@ import {
 import { resolveRequirementDataUpdateEnabled } from "@/lib/requirement-data-update";
 import FetchTaskDetailPopup from "@/components/FetchTaskDetailPopup";
 import RequirementDataProcessingPanel from "@/components/RequirementDataProcessingPanel";
+import { StageSummaryCard } from "@/components/StageSummaryCard";
 import {
   getTaskBlockSurfaceClass,
   getTaskStatusBadgeClass,
@@ -103,10 +104,10 @@ const triggerLabel: Record<string, string> = {
 
 type TaskSubTabKey = "prompts" | "tasks" | "output";
 
-const taskSubTabs: Array<{ key: TaskSubTabKey; label: string }> = [
-  { key: "prompts", label: "采集提示词管理" },
-  { key: "tasks", label: "采集任务" },
-  { key: "output", label: "数据产出" },
+const taskSubTabs: Array<{ key: TaskSubTabKey; label: string; description: string }> = [
+  { key: "prompts", label: "采集提示词管理", description: "按指标组配置采集提示词。" },
+  { key: "tasks", label: "采集任务", description: "查看任务实例与子任务状态。" },
+  { key: "output", label: "数据产出", description: "查看采集结果与产出明细。" },
 ];
 
 const DEFAULT_INDICATOR_GROUP_PREFIX = "ig_default_";
@@ -174,6 +175,10 @@ export default function RequirementTasksPanel({
     }
     return "prompts";
   });
+  const activeTaskSubTabIndex = Math.max(
+    0,
+    taskSubTabs.findIndex((tab) => tab.key === activeTaskSubTab),
+  );
   const requestedWtId = searchParams?.get("wt");
   const requestedTaskGroupId = searchParams?.get("tg");
   const requestedTaskId = searchParams?.get("task");
@@ -411,7 +416,7 @@ export default function RequirementTasksPanel({
     : isIndicatorGroupingDirty
           ? "指标分组已修改，请先保存分组并重建任务组。"
         : hasUserDefinedGrouping && !isIndicatorGroupingComplete
-          ? "请先完成指标分组并覆盖全部指标列，任务组才会按“宽表行 × 指标组”正确拆分。"
+          ? "请先完成指标分组并覆盖全部指标列，任务才能按“指标组 -> 业务周期 -> 维度组合”正确生成。"
           : "";
   const trialEstimatedRows = Math.min(trialFilteredRecords.length, trialMaxRows);
   const trialEstimatedTaskCount = trialEstimatedRows * Math.max(effectiveIndicatorGroups.length, 1);
@@ -552,6 +557,14 @@ export default function RequirementTasksPanel({
         : []
     ),
     [canGenerateTaskPlan, effectiveWideTable, requirement, taskPlan, wtScheduleJobs, wtTaskGroups, taskGroupSummaryMap],
+  );
+  const taskGroupRunSections = useMemo(
+    () => (
+      effectiveWideTable
+        ? buildTaskGroupRunSections(effectiveWideTable, taskGroupRunViews)
+        : [{ id: "__all__", label: "", taskGroups: taskGroupRunViews }]
+    ),
+    [effectiveWideTable, taskGroupRunViews],
   );
   const expandedTaskGroupView = useMemo(
     () => taskGroupRunViews.find((taskGroup) => taskGroup.id === expandedTgId) ?? null,
@@ -1276,28 +1289,37 @@ export default function RequirementTasksPanel({
       ) : null}
 
       {selectedWt ? (
-        <section className="rounded-xl border bg-card p-3">
-          <div className="grid auto-rows-fr gap-2 md:grid-cols-3">
-            {taskSubTabs.map((tab) => {
-              const active = activeTaskSubTab === tab.key;
-              return (
-                <button
-                  key={tab.key}
-                  type="button"
-                  onClick={() => setActiveTaskSubTab(tab.key)}
-                  className={cn(
-                    "rounded-lg px-4 py-2.5 text-sm transition-colors",
-                    active
-                      ? "bg-primary/10 text-primary font-medium"
-                      : "text-muted-foreground hover:bg-muted/60 hover:text-foreground",
-                  )}
-                >
-                  {tab.label}
-                </button>
-              );
-            })}
+        <nav
+          aria-label="任务页面导航"
+          className={cn(
+            "relative z-20 grid overflow-hidden rounded-xl border border-border/80 bg-background/98 shadow-md backdrop-blur-md supports-[backdrop-filter]:bg-background/92",
+            "grid-cols-3",
+          )}
+        >
+          {taskSubTabs.map((tab, index) => (
+            <StageSummaryCard
+              key={tab.key}
+              href={`#task-${tab.key}`}
+              index={index + 1}
+              title={tab.label}
+              description={tab.description}
+              isActive={activeTaskSubTab === tab.key}
+              onNavigate={(event) => {
+                event.preventDefault();
+                setActiveTaskSubTab(tab.key);
+              }}
+            />
+          ))}
+          <div className="pointer-events-none absolute inset-x-0 bottom-0 h-[3px] bg-border/80">
+            <div
+              className="h-full bg-primary transition-transform duration-200 ease-out"
+              style={{
+                width: `${100 / taskSubTabs.length}%`,
+                transform: `translateX(${activeTaskSubTabIndex * 100}%)`,
+              }}
+            />
           </div>
-        </section>
+        </nav>
       ) : null}
 
       {selectedWt && activeTaskSubTab === "prompts" ? (
@@ -2039,8 +2061,8 @@ export default function RequirementTasksPanel({
             <h3 className="font-semibold">{`任务组运行记录 – ${selectedWt?.name ?? "-"}`}</h3>
             <p className="mt-1 text-xs text-muted-foreground">
               {usesBusinessDateAxis
-                ? "任务组按业务日期拆分；组内任务按“宽表行 × 指标组”展开，列表状态展示的是组内任务的当前聚合结果。"
-                : "任务组按开始调度时间拆分；每次调度生成一个全量快照任务组，组内任务按“宽表行 × 指标组”展开。"}
+                ? "任务会按业务周期拆分任务实例；如启用指标分组，将先按指标组拆分，再按业务周期拆分；任务实例内子任务按维度组合展开。"
+                : "任务会按调度时间拆分全量快照任务实例；如启用指标分组，将先按指标组拆分，再按调度时间拆分；任务实例内子任务按维度组合展开。"}
             </p>
           </div>
         </div>
@@ -2049,9 +2071,9 @@ export default function RequirementTasksPanel({
           <div>
             {taskPlan
               ? usesBusinessDateAxis
-                ? `已建立 ${wtTaskGroups.length} 个执行任务组 / 当前范围历史期数 ${taskPlan.historicalDateCount}`
-                : `已建立 ${wtTaskGroups.length} 个全量快照任务组 / ${taskPlan.scheduleSummary}`
-              : `共 ${wtTaskGroups.length} 个任务组`}
+                ? `已建立 ${wtTaskGroups.length} 个任务实例 / 当前范围历史期数 ${taskPlan.historicalDateCount}`
+                : `已建立 ${wtTaskGroups.length} 个全量快照任务实例 / ${taskPlan.scheduleSummary}`
+              : `共 ${wtTaskGroups.length} 个任务实例`}
           </div>
           <div className="mt-1">
             {needsScopeRefresh
@@ -2085,8 +2107,14 @@ export default function RequirementTasksPanel({
                   : "当前宽表暂无全量快照任务组。"}
           </div>
         ) : (
-          <div className="space-y-2">
-            {taskGroupRunViews.map((tg) => {
+          <div className="space-y-4">
+            {taskGroupRunSections.map((section) => (
+              <div key={section.id} className="space-y-2">
+                {section.label ? (
+                  <div className="px-1 text-xs font-medium text-muted-foreground">{section.label}</div>
+                ) : null}
+                <div className="space-y-2">
+                  {section.taskGroups.map((tg) => {
               const isExpanded = expandedTgId === tg.id;
 
               return (
@@ -2281,7 +2309,10 @@ export default function RequirementTasksPanel({
                   ) : null}
                 </div>
               );
-            })}
+                  })}
+                </div>
+              </div>
+            ))}
           </div>
         )}
       </section>
@@ -2873,6 +2904,8 @@ type HistoricalTaskGroupView = {
   businessDate: string;
   businessDateLabel: string;
   displayLabel: string;
+  indicatorGroupId?: string;
+  indicatorGroupName?: string;
   totalTasks: number;
   pendingTasks: number;
   runningTasks: number;
@@ -2888,6 +2921,12 @@ type HistoricalTaskGroupView = {
   coverageStatus?: TaskGroup["coverageStatus"];
   deltaReason?: string;
   taskGroupForTasks: TaskGroup;
+};
+
+type TaskGroupRunSectionView = {
+  id: string;
+  label: string;
+  taskGroups: HistoricalTaskGroupView[];
 };
 
 type PlanVersionView = {
@@ -3011,6 +3050,12 @@ function buildTaskGroupRunViews(
   taskGroupSummaryMap: Map<string, TaskGroupExecutionSummary>,
   scheduleJobs: ScheduleJob[],
 ): HistoricalTaskGroupView[] {
+  const sortedIndicatorGroups = [...wideTable.indicatorGroups].sort(
+    (left, right) => left.priority - right.priority,
+  );
+  const indicatorGroupById = new Map(sortedIndicatorGroups.map((group) => [group.id, group] as const));
+  const indicatorGroupingEnabled = sortedIndicatorGroups.length > 1;
+
   if (!hasWideTableBusinessDateDimension(wideTable)) {
     const snapshotPages = buildFullSnapshotTaskGroupPages(taskGroups, scheduleJobs);
     const snapshotPageMap = new Map(snapshotPages.map((page) => [page.taskGroupId, page]));
@@ -3024,6 +3069,12 @@ function buildTaskGroupRunViews(
         return right.updatedAt.localeCompare(left.updatedAt);
       })
       .map((taskGroup) => {
+        const indicatorGroupId = indicatorGroupingEnabled && taskGroup.partitionKey && indicatorGroupById.has(taskGroup.partitionKey)
+          ? taskGroup.partitionKey
+          : undefined;
+        const indicatorGroupName = indicatorGroupId
+          ? indicatorGroupById.get(indicatorGroupId)?.name ?? taskGroup.partitionLabel
+          : undefined;
         const summary = taskGroupSummaryMap.get(taskGroup.id);
         const snapshotPage = snapshotPageMap.get(taskGroup.id);
         return {
@@ -3031,6 +3082,8 @@ function buildTaskGroupRunViews(
           businessDate: taskGroup.businessDate,
           businessDateLabel: taskGroup.partitionLabel ?? taskGroup.businessDateLabel ?? "全量快照",
           displayLabel: snapshotPage?.pageLabel ?? taskGroup.partitionLabel ?? taskGroup.businessDateLabel ?? taskGroup.id,
+          indicatorGroupId,
+          indicatorGroupName,
           totalTasks: summary?.totalTasks ?? taskGroup.totalTasks,
           pendingTasks: summary?.pendingTasks ?? 0,
           runningTasks: summary?.runningTasks ?? 0,
@@ -3049,7 +3102,7 @@ function buildTaskGroupRunViews(
       });
   }
 
-  const totalTasksPerGroup = taskPlan.dimensionCombinationCount * taskPlan.indicatorGroupCount;
+  const totalTasksPerTaskInstance = taskPlan.dimensionCombinationCount;
   const taskGroupsByDate = new Map<string, TaskGroup[]>();
   const today = formatBusinessDate(new Date());
   for (const taskGroup of taskGroups) {
@@ -3078,6 +3131,12 @@ function buildTaskGroupRunViews(
         .sort(compareTaskGroupsForDisplay);
       if (scopedTaskGroups.length > 0) {
         return scopedTaskGroups.map((taskGroup) => {
+          const indicatorGroupId = indicatorGroupingEnabled && taskGroup.partitionKey && indicatorGroupById.has(taskGroup.partitionKey)
+            ? taskGroup.partitionKey
+            : undefined;
+          const indicatorGroupName = indicatorGroupId
+            ? indicatorGroupById.get(indicatorGroupId)?.name ?? taskGroup.partitionLabel
+            : undefined;
           const summary = taskGroupSummaryMap.get(taskGroup.id);
           const businessDateLabel = formatBusinessDateLabel(
             businessDate,
@@ -3088,6 +3147,8 @@ function buildTaskGroupRunViews(
             businessDate,
             businessDateLabel,
             displayLabel: businessDateLabel,
+            indicatorGroupId,
+            indicatorGroupName,
             totalTasks: summary?.totalTasks ?? taskGroup.totalTasks,
             pendingTasks: summary?.pendingTasks ?? 0,
             runningTasks: summary?.runningTasks ?? 0,
@@ -3110,19 +3171,66 @@ function buildTaskGroupRunViews(
         return [];
       }
 
+      const businessDateLabel = formatBusinessDateLabel(businessDate, wideTable.businessDateRange.frequency);
+      const plannedTriggerType = resolvePlannedTriggerType(businessDate, today);
+
+      if (indicatorGroupingEnabled) {
+        return sortedIndicatorGroups.map((group) => ({
+          id: `tg_planned_${businessDate}_${group.id}`,
+          businessDate,
+          businessDateLabel,
+          displayLabel: businessDateLabel,
+          indicatorGroupId: group.id,
+          indicatorGroupName: group.name,
+          totalTasks: totalTasksPerTaskInstance,
+          pendingTasks: totalTasksPerTaskInstance,
+          runningTasks: 0,
+          completedTasks: 0,
+          failedTasks: 0,
+          invalidatedTasks: 0,
+          progressPercent: 0,
+          triggeredBy: plannedTriggerType,
+          displayStatus: "pending",
+          isReal: false,
+          planVersion: wideTable.currentPlanVersion ?? 1,
+          groupKind: "baseline" as const,
+          coverageStatus: "current" as const,
+          deltaReason: undefined,
+          taskGroupForTasks: {
+            id: `tg_planned_${businessDate}_${group.id}`,
+            wideTableId: wideTable.id,
+            businessDate,
+            businessDateLabel,
+            planVersion: wideTable.currentPlanVersion ?? 1,
+            groupKind: "baseline",
+            coverageStatus: "current",
+            status: "pending",
+            totalTasks: totalTasksPerTaskInstance,
+            completedTasks: 0,
+            failedTasks: 0,
+            triggeredBy: plannedTriggerType,
+            partitionType: "business_date",
+            partitionKey: group.id,
+            partitionLabel: group.name,
+            createdAt: "",
+            updatedAt: "",
+          },
+        }));
+      }
+
       return [{
         id: `tg_planned_${businessDate}`,
         businessDate,
-        businessDateLabel: formatBusinessDateLabel(businessDate, wideTable.businessDateRange.frequency),
-        displayLabel: formatBusinessDateLabel(businessDate, wideTable.businessDateRange.frequency),
-        totalTasks: totalTasksPerGroup,
-        pendingTasks: totalTasksPerGroup,
+        businessDateLabel,
+        displayLabel: businessDateLabel,
+        totalTasks: totalTasksPerTaskInstance,
+        pendingTasks: totalTasksPerTaskInstance,
         runningTasks: 0,
         completedTasks: 0,
         failedTasks: 0,
         invalidatedTasks: 0,
         progressPercent: 0,
-        triggeredBy: resolvePlannedTriggerType(businessDate, today),
+        triggeredBy: plannedTriggerType,
         displayStatus: "pending",
         isReal: false,
         planVersion: wideTable.currentPlanVersion ?? 1,
@@ -3133,20 +3241,58 @@ function buildTaskGroupRunViews(
           id: `tg_planned_${businessDate}`,
           wideTableId: wideTable.id,
           businessDate,
-          businessDateLabel: formatBusinessDateLabel(businessDate, wideTable.businessDateRange.frequency),
+          businessDateLabel,
           planVersion: wideTable.currentPlanVersion ?? 1,
           groupKind: "baseline",
           coverageStatus: "current",
           status: "pending",
-          totalTasks: totalTasksPerGroup,
+          totalTasks: totalTasksPerTaskInstance,
           completedTasks: 0,
           failedTasks: 0,
-          triggeredBy: resolvePlannedTriggerType(businessDate, today),
+          triggeredBy: plannedTriggerType,
           createdAt: "",
           updatedAt: "",
         },
       }];
     });
+}
+
+function buildTaskGroupRunSections(
+  wideTable: WideTable,
+  taskGroupRunViews: HistoricalTaskGroupView[],
+): TaskGroupRunSectionView[] {
+  const sortedIndicatorGroups = [...wideTable.indicatorGroups].sort(
+    (left, right) => left.priority - right.priority,
+  );
+  if (sortedIndicatorGroups.length <= 1) {
+    return [{ id: "__all__", label: "", taskGroups: taskGroupRunViews }];
+  }
+
+  const grouped = new Map<string, HistoricalTaskGroupView[]>();
+  const unscoped: HistoricalTaskGroupView[] = [];
+  for (const view of taskGroupRunViews) {
+    if (view.indicatorGroupId) {
+      const bucket = grouped.get(view.indicatorGroupId) ?? [];
+      bucket.push(view);
+      grouped.set(view.indicatorGroupId, bucket);
+    } else {
+      unscoped.push(view);
+    }
+  }
+
+  const sections: TaskGroupRunSectionView[] = sortedIndicatorGroups
+    .map((group) => ({
+      id: group.id,
+      label: group.name,
+      taskGroups: grouped.get(group.id) ?? [],
+    }))
+    .filter((section) => section.taskGroups.length > 0);
+
+  if (unscoped.length > 0) {
+    sections.push({ id: "__other__", label: "其他", taskGroups: unscoped });
+  }
+
+  return sections.length > 0 ? sections : [{ id: "__all__", label: "", taskGroups: taskGroupRunViews }];
 }
 
 function compareTaskGroupsForDisplay(left: TaskGroup, right: TaskGroup): number {
@@ -3264,7 +3410,14 @@ function materializeLocalTaskGroupArtifacts(
   const scopedRecords = resolveLocalTaskGroupRecords(wideTable, wideTableRecords, taskGroupView.businessDate);
   const tasks = existingTasks.length > 0
     ? existingTasks
-    : buildLocalFetchTasks(taskGroupView.id, wideTable, taskGroupView.planVersion ?? wideTable.currentPlanVersion ?? 1, scopedRecords, timestamp);
+    : buildLocalFetchTasks(
+        taskGroupView.id,
+        wideTable,
+        taskGroupView.planVersion ?? wideTable.currentPlanVersion ?? 1,
+        scopedRecords,
+        timestamp,
+        taskGroupView.indicatorGroupId,
+      );
 
   if (tasks.length === 0) {
     return null;
@@ -3310,12 +3463,16 @@ function buildLocalFetchTasks(
   planVersion: number,
   scopedRecords: WideTableRecord[],
   timestamp: string,
+  indicatorGroupId?: string,
 ): FetchTask[] {
   const indicatorGroups = resolveRunnableIndicatorGroups(wideTable);
+  const scopedIndicatorGroups = indicatorGroups.length > 1 && indicatorGroupId
+    ? indicatorGroups.filter((group) => group.id === indicatorGroupId)
+    : indicatorGroups;
 
   return scopedRecords.flatMap((record) => {
     const rowId = getWideTableRecordRowId(record);
-    return indicatorGroups.map((indicatorGroup) => ({
+    return scopedIndicatorGroups.map((indicatorGroup) => ({
       id: `${LOCAL_FETCH_TASK_PREFIX}${taskGroupId}_${indicatorGroup.id}_${rowId}`,
       taskGroupId,
       wideTableId: wideTable.id,

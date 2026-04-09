@@ -291,14 +291,21 @@ def _build_plan_fetch_tasks(
         wide_table.indicator_groups,
         key=lambda group: (group.priority, group.id),
     )
+    indicator_group_by_id = {group.id: group for group in indicator_groups}
+    indicator_grouping_enabled = len(indicator_groups) > 1
     tasks: list[FetchTask] = []
     for task_group in task_groups:
         if task_group.partition_type == "business_date":
             scoped_rows = rows_by_business_date.get(task_group.business_date or "", [])
         else:
             scoped_rows = rows
+        scoped_indicator_groups = (
+            [indicator_group_by_id[task_group.partition_key]]
+            if indicator_grouping_enabled and task_group.partition_key in indicator_group_by_id
+            else indicator_groups
+        )
         for row in scoped_rows:
-            for indicator_group in indicator_groups:
+            for indicator_group in scoped_indicator_groups:
                 tasks.append(
                     FetchTask(
                         id=f"ft_{task_group.id}_{indicator_group.id}_{row.row_id}",
@@ -350,11 +357,17 @@ def _build_production_historical_task_groups(
 ) -> list[TaskGroup]:
     if wide_table.semantic_time_axis != "business_date" or wide_table.scope.business_date is None:
         return candidate_task_groups
-    candidate_task_groups_by_date = {
-        task_group.business_date: task_group
-        for task_group in candidate_task_groups
-        if task_group.business_date
-    }
+    indicator_groups = sorted(
+        wide_table.indicator_groups,
+        key=lambda group: (group.priority, group.id),
+    )
+    indicator_grouping_enabled = len(indicator_groups) > 1
+    candidate_task_groups_by_key: dict[tuple[str, str], TaskGroup] = {}
+    for task_group in candidate_task_groups:
+        if not task_group.business_date:
+            continue
+        partition_key = task_group.partition_key if indicator_grouping_enabled else ""
+        candidate_task_groups_by_key[(task_group.business_date, partition_key)] = task_group
     rows_by_business_date: dict[str, list[WideTableRow]] = {}
     for row in rows:
         if is_past_business_date(
@@ -368,35 +381,79 @@ def _build_production_historical_task_groups(
         return []
 
     schedule_rule_id = _resolve_default_schedule_rule_id(wide_table)
-    indicator_group_count = len(wide_table.indicator_groups)
     timestamp = datetime.now().isoformat()
     persisted_task_groups: list[TaskGroup] = []
     for business_date, scoped_rows in sorted(rows_by_business_date.items()):
-        existing_task_group = candidate_task_groups_by_date.get(business_date)
-        plan_version = max(
-            [row.plan_version for row in scoped_rows],
-            default=existing_task_group.plan_version if existing_task_group else 1,
-        )
-        persisted_task_groups.append(
-            TaskGroup(
-                id=existing_task_group.id if existing_task_group else f"tg_{wide_table.id}_{_normalize_business_date_token(business_date)}_r{plan_version}",
-                requirement_id=requirement_id,
-                wide_table_id=wide_table.id,
-                business_date=business_date,
-                source_type="scheduled",
-                status="pending",
-                schedule_rule_id=existing_task_group.schedule_rule_id if existing_task_group else schedule_rule_id,
-                plan_version=plan_version,
-                group_kind=existing_task_group.group_kind if existing_task_group else "baseline",
-                total_tasks=len(scoped_rows) * indicator_group_count,
-                completed_tasks=0,
-                failed_tasks=0,
-                triggered_by="backfill",
-                business_date_label=existing_task_group.business_date_label if existing_task_group else business_date,
-                created_at=existing_task_group.created_at if existing_task_group else timestamp,
-                updated_at=timestamp,
+        plan_version = max([row.plan_version for row in scoped_rows], default=1)
+        date_token = _normalize_business_date_token(business_date)
+
+        if indicator_grouping_enabled:
+            for indicator_group in indicator_groups:
+                existing_task_group = candidate_task_groups_by_key.get((business_date, indicator_group.id))
+                persisted_task_groups.append(
+                    TaskGroup(
+                        id=(
+                            existing_task_group.id
+                            if existing_task_group
+                            else f"tg_{wide_table.id}_{date_token}_{indicator_group.id}_r{plan_version}"
+                        ),
+                        requirement_id=requirement_id,
+                        wide_table_id=wide_table.id,
+                        business_date=business_date,
+                        source_type="scheduled",
+                        status="pending",
+                        schedule_rule_id=existing_task_group.schedule_rule_id if existing_task_group else schedule_rule_id,
+                        plan_version=(
+                            existing_task_group.plan_version
+                            if existing_task_group
+                            else plan_version
+                        ),
+                        group_kind=existing_task_group.group_kind if existing_task_group else "baseline",
+                        partition_type="business_date",
+                        partition_key=indicator_group.id,
+                        partition_label=indicator_group.name,
+                        total_tasks=len(scoped_rows),
+                        completed_tasks=0,
+                        failed_tasks=0,
+                        triggered_by="backfill",
+                        business_date_label=existing_task_group.business_date_label if existing_task_group else business_date,
+                        created_at=existing_task_group.created_at if existing_task_group else timestamp,
+                        updated_at=timestamp,
+                    )
+                )
+        else:
+            existing_task_group = candidate_task_groups_by_key.get((business_date, ""))
+            persisted_task_groups.append(
+                TaskGroup(
+                    id=(
+                        existing_task_group.id
+                        if existing_task_group
+                        else f"tg_{wide_table.id}_{date_token}_r{plan_version}"
+                    ),
+                    requirement_id=requirement_id,
+                    wide_table_id=wide_table.id,
+                    business_date=business_date,
+                    source_type="scheduled",
+                    status="pending",
+                    schedule_rule_id=existing_task_group.schedule_rule_id if existing_task_group else schedule_rule_id,
+                    plan_version=(
+                        existing_task_group.plan_version
+                        if existing_task_group
+                        else plan_version
+                    ),
+                    group_kind=existing_task_group.group_kind if existing_task_group else "baseline",
+                    partition_type="business_date",
+                    partition_key=business_date,
+                    partition_label=business_date,
+                    total_tasks=len(scoped_rows),
+                    completed_tasks=0,
+                    failed_tasks=0,
+                    triggered_by="backfill",
+                    business_date_label=existing_task_group.business_date_label if existing_task_group else business_date,
+                    created_at=existing_task_group.created_at if existing_task_group else timestamp,
+                    updated_at=timestamp,
+                )
             )
-        )
 
     return persisted_task_groups
 

@@ -10,6 +10,7 @@ from app.schemas import (
     CollectionBatch,
     ExecutionRecord,
     FetchTask,
+    IndicatorGroup,
     IndicatorCell,
     NarrowIndicatorRow,
     Requirement,
@@ -211,53 +212,97 @@ def build_task_groups(
     )
     backfill_request = backfill_requests[0] if backfill_requests else None
     schedule_rule = next((rule for rule in wide_table.schedule_rules if rule.enabled), None)
+    indicator_groups = sorted(
+        wide_table.indicator_groups,
+        key=lambda group: (group.priority, group.id),
+    )
+    indicator_grouping_enabled = len(indicator_groups) > 1
 
     task_groups: list[TaskGroup] = []
     for batch in collection_batches:
         business_date = batch.start_business_date
         if wide_table.collection_coverage_mode == "full_snapshot":
+            per_indicator_groups = indicator_groups if indicator_grouping_enabled else [indicator_groups[0]]
+            for indicator_group in per_indicator_groups:
+                task_groups.append(
+                    TaskGroup(
+                        id=(
+                            f"TG-{wide_table.id}-{batch.snapshot_label.replace('-', '')}-{indicator_group.id}"
+                            if indicator_grouping_enabled
+                            else f"TG-{wide_table.id}-{batch.snapshot_label.replace('-', '')}"
+                        ),
+                        requirement_id=requirement.id,
+                        wide_table_id=wide_table.id,
+                        batch_id=batch.id,
+                        business_date=business_date,
+                        source_type="scheduled",
+                        status=batch.status if batch.status != "failed" else "partial",
+                        schedule_rule_id=schedule_rule.id if schedule_rule else None,
+                        partition_type="full_table",
+                        partition_key=indicator_group.id if indicator_grouping_enabled else "full_table",
+                        partition_label=(
+                            f"{indicator_group.name} · {batch.snapshot_label}"
+                            if indicator_grouping_enabled
+                            else batch.snapshot_label
+                        ),
+                        triggered_by=batch.triggered_by,
+                        created_at=batch.created_at,
+                        updated_at=batch.updated_at,
+                    )
+                )
+            continue
+
+        if schedule_rule is None:
+            continue
+        per_indicator_groups = indicator_groups if indicator_grouping_enabled else [indicator_groups[0]]
+        for indicator_group in per_indicator_groups:
+            date_token = _normalize_business_date_token(business_date or "")
             task_groups.append(
                 TaskGroup(
-                    id=f"TG-{wide_table.id}-{batch.snapshot_label.replace('-', '')}",
+                    id=(
+                        f"TG-{wide_table.id}-{date_token}-{indicator_group.id}"
+                        if indicator_grouping_enabled
+                        else f"TG-{wide_table.id}-{date_token}"
+                    ),
                     requirement_id=requirement.id,
                     wide_table_id=wide_table.id,
                     batch_id=batch.id,
                     business_date=business_date,
-                    source_type="scheduled",
+                    source_type="backfill" if batch.triggered_by == "backfill" else "scheduled",
                     status=batch.status if batch.status != "failed" else "partial",
-                    schedule_rule_id=schedule_rule.id if schedule_rule else None,
-                    partition_type="full_table",
-                    partition_key="full_table",
-                    partition_label=batch.snapshot_label,
+                    schedule_rule_id=schedule_rule.id,
+                    backfill_request_id=backfill_request.id if batch.triggered_by == "backfill" and backfill_request else None,
+                    partition_type="business_date",
+                    partition_key=indicator_group.id if indicator_grouping_enabled else (business_date or ""),
+                    partition_label=indicator_group.name if indicator_grouping_enabled else (business_date or ""),
                     triggered_by=batch.triggered_by,
                     created_at=batch.created_at,
                     updated_at=batch.updated_at,
                 )
             )
-            continue
-
-        if schedule_rule is None:
-            continue
-        task_groups.append(
-            TaskGroup(
-                id=f"TG-{wide_table.id}-{_normalize_business_date_token(business_date or '')}",
-                requirement_id=requirement.id,
-                wide_table_id=wide_table.id,
-                batch_id=batch.id,
-                business_date=business_date,
-                source_type="backfill" if batch.triggered_by == "backfill" else "scheduled",
-                status=batch.status if batch.status != "failed" else "partial",
-                schedule_rule_id=schedule_rule.id,
-                backfill_request_id=backfill_request.id if batch.triggered_by == "backfill" and backfill_request else None,
-                partition_type="business_date",
-                partition_key=business_date or "",
-                partition_label=business_date or "",
-                triggered_by=batch.triggered_by,
-                created_at=batch.created_at,
-                updated_at=batch.updated_at,
-            )
-        )
     return task_groups
+
+
+def _resolve_indicator_groups_for_task_group(
+    wide_table: WideTable,
+    task_group: TaskGroup,
+) -> list[IndicatorGroup]:
+    indicator_groups = sorted(
+        wide_table.indicator_groups,
+        key=lambda group: (group.priority, group.id),
+    )
+    if len(indicator_groups) <= 1:
+        return indicator_groups
+    key = (task_group.partition_key or "").strip()
+    if key:
+        matched = [group for group in indicator_groups if group.id == key]
+        if matched:
+            return matched
+    # fallback for legacy task groups
+    for group in indicator_groups:
+        if group.id and group.id in task_group.id:
+            return [group]
+    return indicator_groups
 
 
 def build_fetch_tasks(
@@ -271,12 +316,13 @@ def build_fetch_tasks(
     tasks: list[FetchTask] = []
 
     for task_group in task_groups:
+        scoped_indicator_groups = _resolve_indicator_groups_for_task_group(wide_table, task_group)
         if task_group.partition_type == "business_date":
             grouped_rows = rows_by_business_date.get(task_group.business_date or "", [])
         else:
             grouped_rows = sorted(rows, key=lambda row: row.row_id)
         for row in grouped_rows:
-            for indicator_group in wide_table.indicator_groups:
+            for indicator_group in scoped_indicator_groups:
                 task_status = derive_fetch_task_status(row, indicator_group.indicator_keys)
                 task_id = _build_fetch_task_id(
                     wide_table=wide_table,

@@ -142,7 +142,7 @@ def create_trial_run_endpoint(
         batch_id=batch.id,
         plan_version=plan_version,
         rows=trial_rows,
-        indicator_group_count=len(wide_table.indicator_groups),
+        indicator_groups=wide_table.indicator_groups,
         schedule_rule_id=wide_table.schedule_rules[0].id if wide_table.schedule_rules else "trial",
         timestamp_iso=timestamp_iso,
         token=token,
@@ -237,14 +237,43 @@ def _build_trial_task_groups(
     batch_id: str,
     plan_version: int,
     rows: list[WideTableRow],
-    indicator_group_count: int,
+    indicator_groups: list,
     schedule_rule_id: str,
     timestamp_iso: str,
     token: str,
     uses_business_date_axis: bool,
     snapshot_label: str,
 ) -> list[TaskGroup]:
+    indicator_groups_sorted = sorted(
+        indicator_groups,
+        key=lambda group: (getattr(group, "priority", 100), group.id),
+    )
+    indicator_group_count = len(indicator_groups_sorted)
+    indicator_grouping_enabled = indicator_group_count > 1
     if not uses_business_date_axis:
+        if indicator_grouping_enabled:
+            return [
+                TaskGroup(
+                    id=f"TG-TRIAL-{wide_table_id}-{token}-{indicator_group.id}",
+                    requirement_id=requirement_id,
+                    wide_table_id=wide_table_id,
+                    batch_id=batch_id,
+                    source_type="scheduled",
+                    status="pending",
+                    schedule_rule_id=schedule_rule_id,
+                    plan_version=plan_version,
+                    group_kind="trial",
+                    partition_type="full_table",
+                    partition_key=indicator_group.id,
+                    partition_label=f"{indicator_group.name} · {snapshot_label}",
+                    total_tasks=len(rows),
+                    triggered_by="trial",
+                    business_date_label=snapshot_label,
+                    created_at=timestamp_iso,
+                    updated_at=timestamp_iso,
+                )
+                for indicator_group in indicator_groups_sorted
+            ]
         return [
             TaskGroup(
                 id=f"TG-TRIAL-{wide_table_id}-{token}",
@@ -270,6 +299,36 @@ def _build_trial_task_groups(
     rows_by_date: dict[str, list[WideTableRow]] = {}
     for row in rows:
         rows_by_date.setdefault(row.business_date or "", []).append(row)
+    if indicator_grouping_enabled:
+        groups: list[TaskGroup] = []
+        for business_date, scoped_rows in sorted(rows_by_date.items()):
+            if not business_date:
+                continue
+            date_token = business_date.replace("-", "")
+            for indicator_group in indicator_groups_sorted:
+                groups.append(
+                    TaskGroup(
+                        id=f"TG-TRIAL-{wide_table_id}-{date_token}-{token}-{indicator_group.id}",
+                        requirement_id=requirement_id,
+                        wide_table_id=wide_table_id,
+                        batch_id=batch_id,
+                        business_date=business_date,
+                        source_type="scheduled",
+                        status="pending",
+                        schedule_rule_id=schedule_rule_id,
+                        plan_version=plan_version,
+                        group_kind="trial",
+                        partition_type="business_date",
+                        partition_key=indicator_group.id,
+                        partition_label=f"{indicator_group.name} · {business_date}",
+                        total_tasks=len(scoped_rows),
+                        triggered_by="trial",
+                        business_date_label=business_date,
+                        created_at=timestamp_iso,
+                        updated_at=timestamp_iso,
+                    )
+                )
+        return groups
     return [
         TaskGroup(
             id=f"TG-TRIAL-{wide_table_id}-{business_date.replace('-', '')}-{token}",
@@ -308,6 +367,13 @@ def _build_trial_fetch_tasks(
     for row in rows:
         rows_by_date.setdefault(row.business_date or "", []).append(row)
 
+    indicator_groups = sorted(
+        wide_table.indicator_groups,
+        key=lambda group: (group.priority, group.id),
+    )
+    indicator_group_by_id = {group.id: group for group in indicator_groups}
+    indicator_grouping_enabled = len(indicator_groups) > 1
+
     tasks: list[FetchTask] = []
     for task_group in task_groups:
         scoped_rows = (
@@ -315,8 +381,13 @@ def _build_trial_fetch_tasks(
             if task_group.partition_type == "business_date"
             else rows
         )
+        scoped_indicator_groups = (
+            [indicator_group_by_id[task_group.partition_key]]
+            if indicator_grouping_enabled and task_group.partition_key in indicator_group_by_id
+            else indicator_groups
+        )
         for row in scoped_rows:
-            for indicator_group in wide_table.indicator_groups:
+            for indicator_group in scoped_indicator_groups:
                 tasks.append(
                     FetchTask(
                         id=f"FT-{task_group.id}-R{row.row_id:03d}-{indicator_group.id}",

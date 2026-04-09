@@ -21,6 +21,18 @@ export type TaskPlanReconcileResult = {
   invalidatedTaskGroupCount: number;
 };
 
+function resolveIndicatorGroupsForTaskGroup(
+  taskGroup: Pick<TaskGroup, "partitionKey">,
+  indicatorGroups: IndicatorGroupLike[],
+): IndicatorGroupLike[] {
+  if (indicatorGroups.length <= 1) {
+    return indicatorGroups;
+  }
+  const key = taskGroup.partitionKey ?? "";
+  const matched = indicatorGroups.find((group) => group.id === key);
+  return matched ? [matched] : indicatorGroups;
+}
+
 export function reconcileTaskPlanChange(params: {
   requirement: Requirement;
   wideTable: WideTable;
@@ -45,6 +57,7 @@ export function reconcileTaskPlanChange(params: {
     ? Math.max(currentPlanVersion, 1) + 1
     : Math.max(currentPlanVersion, 1);
   const nextIndicatorGroups = resolveIndicatorGroups(wideTable);
+  const indicatorGroupingEnabled = nextIndicatorGroups.length > 1;
   const needsLifecycleRebuild = shouldRebuildCurrentPlanForRequirementLifecycle({
     requirement,
     wideTable,
@@ -73,20 +86,32 @@ export function reconcileTaskPlanChange(params: {
 
   const nextTaskGroups = Array.from(nextRecordsByDate.entries())
     .sort(([left], [right]) => right.localeCompare(left))
-    .map(([businessDate, records]) =>
-      buildTaskGroup({
-        requirement,
-        wideTable,
-        businessDate,
-        planVersion: nextPlanVersion,
-        rowSnapshots: records.map((record) => annotateRecordSnapshot(record, nextPlanVersion, "baseline")),
-        indicatorGroups: nextIndicatorGroups,
-        now,
-      }),
-    );
+    .flatMap(([businessDate, records]) => {
+      const rowSnapshots = records.map((record) => annotateRecordSnapshot(record, nextPlanVersion, "baseline"));
+      const indicatorGroupsToBuild = indicatorGroupingEnabled
+        ? nextIndicatorGroups
+        : nextIndicatorGroups.length > 0
+          ? [nextIndicatorGroups[0]]
+          : [];
+      if (indicatorGroupsToBuild.length === 0) {
+        return [];
+      }
+      return indicatorGroupsToBuild.map((indicatorGroup) =>
+        buildTaskGroup({
+          requirement,
+          wideTable,
+          businessDate,
+          planVersion: nextPlanVersion,
+          rowSnapshots,
+          indicatorGroup,
+          indicatorGroupingEnabled,
+          now,
+        }),
+      );
+    });
   const nextTaskGroupIds = new Set(nextTaskGroups.map((taskGroup) => taskGroup.id));
   const nextFetchTasks = nextTaskGroups.flatMap((taskGroup) =>
-    buildExplicitFetchTasks(taskGroup, wideTable, nextIndicatorGroups),
+    buildExplicitFetchTasks(taskGroup, wideTable, resolveIndicatorGroupsForTaskGroup(taskGroup, nextIndicatorGroups)),
   );
 
   return {
@@ -282,24 +307,27 @@ function buildTaskGroup(params: {
   businessDate: string;
   planVersion: number;
   rowSnapshots: WideTableRecord[];
-  indicatorGroups: IndicatorGroupLike[];
+  indicatorGroup: IndicatorGroupLike;
+  indicatorGroupingEnabled: boolean;
   now: Date;
 }): TaskGroup {
-  const { wideTable, businessDate, planVersion, rowSnapshots, indicatorGroups, now } = params;
+  const { wideTable, businessDate, planVersion, rowSnapshots, indicatorGroup, indicatorGroupingEnabled, now } = params;
   const timestamp = now.toISOString();
-  const totalTasks = rowSnapshots.length * indicatorGroups.length;
+  const totalTasks = rowSnapshots.length;
   const isFullTablePartition = !hasWideTableBusinessDateDimension(wideTable);
   if (isFullTablePartition) {
     const triggeredBy = "schedule";
     return {
-      id: `tg_${wideTable.id}_snapshot_r${planVersion}`,
+      id: indicatorGroupingEnabled
+        ? `tg_${wideTable.id}_snapshot_${indicatorGroup.id}_r${planVersion}`
+        : `tg_${wideTable.id}_snapshot_r${planVersion}`,
       wideTableId: wideTable.id,
       businessDate: "",
       businessDateLabel: "当前快照",
       batchId: undefined,
       partitionType: "full_table",
-      partitionKey: FULL_TABLE_PARTITION_KEY,
-      partitionLabel: "当前快照",
+      partitionKey: indicatorGroup.id,
+      partitionLabel: indicatorGroup.name,
       planVersion,
       groupKind: "baseline",
       coverageStatus: "current",
@@ -318,7 +346,9 @@ function buildTaskGroup(params: {
   const triggeredBy = historical ? "backfill" : "schedule";
 
   return {
-    id: `tg_${wideTable.id}_${businessDate.replace(/-/g, "")}_r${planVersion}`,
+    id: indicatorGroupingEnabled
+      ? `tg_${wideTable.id}_${businessDate.replace(/-/g, "")}_${indicatorGroup.id}_r${planVersion}`
+      : `tg_${wideTable.id}_${businessDate.replace(/-/g, "")}_r${planVersion}`,
     wideTableId: wideTable.id,
     businessDate,
     businessDateLabel: formatBusinessDateLabel(businessDate, wideTable.businessDateRange.frequency),
@@ -331,6 +361,9 @@ function buildTaskGroup(params: {
     completedTasks: 0,
     failedTasks: 0,
     triggeredBy,
+    partitionType: "business_date",
+    partitionKey: indicatorGroup.id,
+    partitionLabel: indicatorGroup.name,
     createdAt: timestamp,
     updatedAt: timestamp,
   };
