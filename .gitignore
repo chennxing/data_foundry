@@ -21,6 +21,19 @@ tmp/
 *.log
 *.err.log
 
+# Java / Maven
+**/target/
+**/.classpath
+**/.project
+**/.settings/
+**/*.iml
+**/.springBeans
+**/.factorypath
+**/logs/
+
+# build staging
+server-package/
+
 # local artifacts
 *.zip
 _sqlite_test.sqlite3

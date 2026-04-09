@@ -1,3 +1,5 @@
 @echo off
-cd /d E:\huatai\file\data-foundry-agent
-call E:\huatai\file\data-foundry-agent\.venv\Scripts\python.exe -m uvicorn app.main:app --host 0.0.0.0 --port 8100 1>> E:\huatai\file\agent.log 2>> E:\huatai\file\agent.err.log
+setlocal enabledelayedexpansion
+cd /d %~dp0
+if not exist logs mkdir logs
+call mvn -q -pl data-foundry-agent-service -DskipTests spring-boot:run 1>> logs\agent.out.log 2>> logs\agent.err.log

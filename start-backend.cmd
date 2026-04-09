@@ -1,4 +1,5 @@
 @echo off
-cd /d E:\huatai\file\data-foundry-backend
-set "DATA_FOUNDRY_DB_PATH=E:\huatai\file\data-foundry-backend\data\data-foundry-recovered.sqlite3"
-call E:\huatai\file\data-foundry-backend\.venv\Scripts\python.exe -m uvicorn app.main:app --host 0.0.0.0 --port 8000 1>> E:\huatai\file\backend.log 2>> E:\huatai\file\backend.err.log
+setlocal enabledelayedexpansion
+cd /d %~dp0
+if not exist logs mkdir logs
+call mvn -q -pl data-foundry-backend-service -DskipTests spring-boot:run 1>> logs\backend.out.log 2>> logs\backend.err.log

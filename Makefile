@@ -5,20 +5,19 @@ STAGE_DIR = $(PROJECT_NAME)
 
 all: package
 
-package:
+build:
+	mvn -q -DskipTests package
+
+package: build
 	powershell -NoProfile -Command "\
 	Remove-Item '$(STAGE_DIR)' -Recurse -Force -ErrorAction SilentlyContinue; \
 	New-Item -ItemType Directory -Path '$(STAGE_DIR)' | Out-Null; \
-	Copy-Item data-foundry-agent -Destination '$(STAGE_DIR)' -Recurse; \
-	Copy-Item data-foundry-backend -Destination '$(STAGE_DIR)' -Recurse; \
+	Copy-Item data-foundry-backend-service\\target\\*.jar -Destination '$(STAGE_DIR)' -ErrorAction SilentlyContinue; \
+	Copy-Item data-foundry-scheduler-service\\target\\*.jar -Destination '$(STAGE_DIR)' -ErrorAction SilentlyContinue; \
+	Copy-Item data-foundry-agent-service\\target\\*.jar -Destination '$(STAGE_DIR)' -ErrorAction SilentlyContinue; \
+	Copy-Item db\\mysql -Destination '$(STAGE_DIR)\\db\\mysql' -Recurse; \
+	Copy-Item docs\\java-refactor-quickstart.md -Destination '$(STAGE_DIR)' -ErrorAction SilentlyContinue; \
 	Copy-Item README.md -Destination '$(STAGE_DIR)' -ErrorAction SilentlyContinue; \
-	Copy-Item pyproject.toml -Destination '$(STAGE_DIR)' -ErrorAction SilentlyContinue; \
-	Copy-Item uv.lock -Destination '$(STAGE_DIR)' -ErrorAction SilentlyContinue; \
-	Copy-Item requirements.txt -Destination '$(STAGE_DIR)' -ErrorAction SilentlyContinue; \
-	Copy-Item .env.example -Destination '$(STAGE_DIR)' -ErrorAction SilentlyContinue; \
-	Get-ChildItem '$(STAGE_DIR)' -Recurse -Directory -Force | \
-	Where-Object { $$_.Name -in @('.git', '.venv', '__pycache__', 'node_modules', '.npm-cache', '.uv-cache') } | \
-	Remove-Item -Recurse -Force; \
 	Get-ChildItem '$(STAGE_DIR)' -Recurse -File -Force | \
 	Where-Object { \
 		$$_.Name -like '*.log' -or \
@@ -37,4 +36,4 @@ clean:
 
 rebuild: clean package
 
-.PHONY: all package clean rebuild
+.PHONY: all build package clean rebuild
