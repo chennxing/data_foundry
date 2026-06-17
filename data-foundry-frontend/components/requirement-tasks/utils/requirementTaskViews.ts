@@ -1,5 +1,4 @@
 import type {
-  ColumnDefinition,
   FetchTask,
   Requirement,
   TaskGroup,
@@ -27,6 +26,11 @@ import {
 } from "@/lib/task-group-display";
 import { normalizeCollectionTaskLabel } from "@/lib/collection-task-list-view";
 import type { TaskGroupExecutionSummary } from "@/lib/task-group-execution";
+import {
+  buildDefaultIndicatorGroup,
+  buildDefaultIndicatorGroupId,
+  DEFAULT_INDICATOR_GROUP_NAME,
+} from "@/lib/indicator-groups";
 import type {
   HistoricalTaskGroupView,
   PlanVersionView,
@@ -34,27 +38,13 @@ import type {
   TaskInstanceRowView,
   TaskPlanView,
 } from "@/components/requirement-tasks/types";
-import { DEFAULT_INDICATOR_GROUP_PREFIX } from "@/components/requirement-tasks/utils/requirementTaskConstants";
 import {
   findIndicatorColumnLabel,
   summarizeDateSlots,
   taskFrequencyLabel,
 } from "@/components/requirement-tasks/utils/requirementTaskFormatters";
 
-export const buildDefaultIndicatorGroupId = (wideTableId: string) =>
-  `${DEFAULT_INDICATOR_GROUP_PREFIX}${wideTableId}`;
-
-export const buildDefaultIndicatorGroup = (
-  wideTable: WideTable,
-  indicatorColumns: ColumnDefinition[],
-): WideTable["indicatorGroups"][number] => ({
-  id: buildDefaultIndicatorGroupId(wideTable.id),
-  wideTableId: wideTable.id,
-  name: "统一提示词",
-  indicatorColumns: indicatorColumns.map((column) => column.name),
-  priority: 1,
-  description: "",
-});
+export { buildDefaultIndicatorGroup, buildDefaultIndicatorGroupId };
 
 export function resolveTaskRecordBusinessDate(wideTable: WideTable, record: WideTableRecord): string {
   const businessDateColumn = wideTable.schema.columns.find((column) => column.isBusinessDate);
@@ -596,7 +586,7 @@ export function buildTaskInstanceRowViews(params: {
           ? formatBusinessDateLabel(fetchTask.businessDate, wideTable.businessDateRange.frequency)
           : fetchTask.id
       ),
-      indicatorGroupName: matchedIndicatorGroup?.name ?? fetchTask.indicatorGroupName ?? "统一提示词",
+      indicatorGroupName: matchedIndicatorGroup?.name ?? fetchTask.indicatorGroupName ?? DEFAULT_INDICATOR_GROUP_NAME,
       indicatorLabels,
       collectionTaskId: fetchTask.collectionTaskId,
       status: fetchTask.status,
@@ -648,14 +638,14 @@ function resolveCollectionTaskSummaries(
       .sort((left, right) => left.priority - right.priority)
       .map((group) => ({
         id: group.id,
-        name: group.name || "统一提示词",
+        name: group.name || DEFAULT_INDICATOR_GROUP_NAME,
         indicatorLabels: group.indicatorColumns.map((columnName) => findIndicatorColumnLabel(indicatorColumns, columnName)),
       }));
   }
 
   return [{
     id: buildDefaultIndicatorGroupId(wideTable.id),
-    name: "统一提示词",
+    name: DEFAULT_INDICATOR_GROUP_NAME,
     indicatorLabels: indicatorColumns.map((column) => findIndicatorColumnLabel(indicatorColumns, column.name)),
   }];
 }

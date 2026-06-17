@@ -10,7 +10,8 @@ import {
 import {
   buildDefaultIndicatorGroup,
   buildDefaultIndicatorGroupId,
-} from "@/components/requirement-tasks/utils/requirementTaskViews";
+  ensureDefaultIndicatorGroup,
+} from "@/lib/indicator-groups";
 import { formatTaskActionError } from "@/components/requirement-tasks/utils/requirementTaskFormatters";
 
 type PromptEditorMode = "sections" | "markdown";
@@ -78,14 +79,15 @@ export default function usePromptEditor({
       ...wideTable,
       indicatorGroups: (() => {
         const defaultGroupId = buildDefaultIndicatorGroupId(wideTable.id);
-        const hasTarget = wideTable.indicatorGroups.some((group) => group.id === groupId);
+        const normalizedWideTable = ensureDefaultIndicatorGroup(wideTable);
+        const hasTarget = normalizedWideTable.indicatorGroups.some((group) => group.id === groupId);
         const indicatorColumnsForDefault = wideTable.schema.columns.filter(
           (column) => column.category === "indicator",
         );
         const hydratedGroups = (
           !hasTarget && groupId === defaultGroupId
-            ? [...wideTable.indicatorGroups, buildDefaultIndicatorGroup(wideTable, indicatorColumnsForDefault)]
-            : wideTable.indicatorGroups
+            ? [...normalizedWideTable.indicatorGroups, buildDefaultIndicatorGroup(wideTable, indicatorColumnsForDefault)]
+            : normalizedWideTable.indicatorGroups
         );
 
         return hydratedGroups.map((group) => (
@@ -109,21 +111,8 @@ export default function usePromptEditor({
     wideTable: WideTable,
     editedAt: string,
   ): WideTable => {
-    const defaultGroupId = buildDefaultIndicatorGroupId(wideTable.id);
-    const schemaIndicatorColumns = wideTable.schema.columns.filter(
-      (column) => column.category === "indicator",
-    );
-    const storedDefaultGroup = wideTable.indicatorGroups.find(
-      (group) => group.id === defaultGroupId,
-    );
-    const userGroups = wideTable.indicatorGroups.filter(
-      (group) => group.id !== defaultGroupId,
-    );
-    const baseGroups = userGroups.length > 0
-      ? userGroups
-      : schemaIndicatorColumns.length > 0
-        ? [storedDefaultGroup ?? buildDefaultIndicatorGroup(wideTable, schemaIndicatorColumns)]
-        : [];
+    const baseWideTable = ensureDefaultIndicatorGroup(wideTable);
+    const baseGroups = baseWideTable.indicatorGroups;
 
     const indicatorGroups = baseGroups.map((group) => {
       const editMode = promptEditorModes[group.id] ?? "markdown";
@@ -134,7 +123,7 @@ export default function usePromptEditor({
           ? markdownDraft
           : group.promptTemplate?.trim()
             ? group.promptTemplate
-            : buildIndicatorGroupPrompt(requirement, wideTable, group).markdown;
+            : buildIndicatorGroupPrompt(requirement, baseWideTable, group).markdown;
         return {
           ...group,
           promptTemplate: nextTemplate,
@@ -147,12 +136,12 @@ export default function usePromptEditor({
 
       return {
         ...group,
-        promptTemplate: buildIndicatorGroupPrompt(requirement, wideTable, group).markdown,
+        promptTemplate: buildIndicatorGroupPrompt(requirement, baseWideTable, group).markdown,
       };
     });
 
     return {
-      ...wideTable,
+      ...baseWideTable,
       indicatorGroups,
       updatedAt: editedAt,
     };

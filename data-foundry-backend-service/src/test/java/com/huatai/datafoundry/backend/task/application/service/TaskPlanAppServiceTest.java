@@ -256,6 +256,46 @@ public class TaskPlanAppServiceTest {
   }
 
   @Test
+  void persistPlanSyncsIndicatorGroupLabelsToTaskGroupAndFetchTask() {
+    WideTableReadRepository wideTableRepository = Mockito.mock(WideTableReadRepository.class);
+    TaskGroupRepository taskGroupRepository = Mockito.mock(TaskGroupRepository.class);
+    FetchTaskRepository fetchTaskRepository = Mockito.mock(FetchTaskRepository.class);
+    TaskPlanAppService svc =
+        new TaskPlanAppService(
+            wideTableRepository,
+            taskGroupRepository,
+            fetchTaskRepository,
+            new TaskPlanDomainService(),
+            null,
+            new ObjectMapper());
+
+    WideTablePlanSource wideTable = new WideTablePlanSource();
+    wideTable.setId("WT1");
+    wideTable.setRequirementId("R1");
+    wideTable.setSchemaVersion(1);
+    wideTable.setScopeJson("{}");
+    wideTable.setIndicatorGroupsJson(
+        "[{\"id\":\"ig-default\",\"name\":\"默认指标组\",\"indicator_columns\":[\"metric_a\"]}]");
+    when(wideTableRepository.getByIdForRequirement("R1", "WT1")).thenReturn(wideTable);
+    when(taskGroupRepository.listByIds(anyList())).thenReturn(Collections.<TaskGroup>emptyList());
+    when(fetchTaskRepository.listByTaskGroup("TG1"))
+        .thenReturn(Collections.<FetchTask>emptyList());
+
+    Map<String, Object> raw = new HashMap<String, Object>();
+    raw.put("id", "TG1");
+    raw.put("business_date", "2026-06");
+    raw.put("partition_type", "indicator_group");
+    raw.put("partition_key", "ig-default");
+    raw.put("status", "pending");
+    raw.put("plan_version", 1);
+
+    svc.persistPlanTaskGroups("R1", "WT1", Collections.singletonList(raw));
+
+    verify(taskGroupRepository).updateIndicatorGroupLabel("R1", "WT1", "ig-default", "默认指标组");
+    verify(fetchTaskRepository).updateIndicatorGroupName("R1", "WT1", "ig-default", "默认指标组");
+  }
+
+  @Test
   void persistPlanBindsCurrentPeriodToRuleAndKeepsPastPeriodManual() {
     WideTableReadRepository wideTableRepository = Mockito.mock(WideTableReadRepository.class);
     TaskGroupRepository taskGroupRepository = Mockito.mock(TaskGroupRepository.class);

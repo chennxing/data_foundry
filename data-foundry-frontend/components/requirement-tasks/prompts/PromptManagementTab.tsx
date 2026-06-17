@@ -99,7 +99,7 @@ export default function PromptManagementTab({
           <div>
             <h3 className="font-semibold">待采集指标</h3>
             <p className="mt-1 text-xs text-muted-foreground">
-              默认不对指标进行分组，所有指标共享一份采集提示词；如有需要，可通过【指标分组】拆分成多个指标组，每个指标组的提示词独立配置。
+              提交需求后，系统会默认将全部指标归入“默认指标组”，共享一份采集提示词；如有需要，可通过【指标分组】拆分成多个指标组，每个指标组的提示词独立配置。
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -238,7 +238,7 @@ export default function PromptManagementTab({
         ) : (
           <div className="space-y-4">
             <div className="rounded-lg border border-dashed bg-background px-4 py-6 text-sm text-muted-foreground">
-              当前未对指标进行分组，系统将使用统一提示词采集全部指标。如需按不同指标组配置提示词，请点击右上角【指标分组】。
+              当前指标默认归属于“默认指标组”，共享一份采集提示词。如需按不同指标组配置提示词，请点击右上角【指标分组】。
             </div>
             {taskPlanBlockerMessage ? (
               <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">

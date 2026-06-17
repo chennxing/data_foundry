@@ -395,6 +395,15 @@ public class TaskPlanAppService {
   }
 
   @Transactional
+  public void syncIndicatorGroupLabels(String requirementId, String wideTableId) {
+    WideTablePlanSource wideTable = wideTableReadRepository.getByIdForRequirement(requirementId, wideTableId);
+    List<IndicatorGroup> indicatorGroups = parseIndicatorGroups(
+        wideTable != null ? wideTable.getIndicatorGroupsJson() : null,
+        wideTableId);
+    syncIndicatorGroupLabels(requirementId, wideTableId, indicatorGroups);
+  }
+
+  @Transactional
   public void persistPlanTaskGroups(
       String requirementId,
       String wideTableId,
@@ -500,6 +509,7 @@ public class TaskPlanAppService {
     for (TaskGroup record : records) {
       ensureFetchTasksForTaskGroup(record);
     }
+    syncIndicatorGroupLabels(requirementId, wideTableId, indicatorGroups);
 
     if (invalidateMissing) {
       invalidateMissingPendingTaskGroups(requirementId, wideTableId, idSet);
@@ -550,6 +560,23 @@ public class TaskPlanAppService {
     for (int i = 0; i < toInvalidate.size(); i += batchSize) {
       int end = Math.min(toInvalidate.size(), i + batchSize);
       taskGroupRepository.updateStatusByIds(toInvalidate.subList(i, end), "invalidated");
+    }
+  }
+
+  private void syncIndicatorGroupLabels(
+      String requirementId, String wideTableId, List<IndicatorGroup> indicatorGroups) {
+    if (indicatorGroups == null || indicatorGroups.isEmpty()) {
+      return;
+    }
+    for (IndicatorGroup indicatorGroup : indicatorGroups) {
+      if (indicatorGroup == null || indicatorGroup.id == null || indicatorGroup.id.trim().isEmpty()) {
+        continue;
+      }
+      String name = indicatorGroup.name != null && !indicatorGroup.name.trim().isEmpty()
+          ? indicatorGroup.name.trim()
+          : "默认指标组";
+      taskGroupRepository.updateIndicatorGroupLabel(requirementId, wideTableId, indicatorGroup.id, name);
+      fetchTaskRepository.updateIndicatorGroupName(requirementId, wideTableId, indicatorGroup.id, name);
     }
   }
 
@@ -1223,7 +1250,7 @@ public class TaskPlanAppService {
     if (indicatorGroupsJson == null || indicatorGroupsJson.trim().isEmpty()) {
       IndicatorGroup fallback = new IndicatorGroup();
       fallback.id = "ig_default_" + (wideTableId != null ? wideTableId : "wide_table");
-      fallback.name = "default";
+      fallback.name = "默认指标组";
       return Collections.singletonList(fallback);
     }
     try {
@@ -1259,14 +1286,14 @@ public class TaskPlanAppService {
       if (out.isEmpty()) {
         IndicatorGroup fallback = new IndicatorGroup();
         fallback.id = "ig_default_" + (wideTableId != null ? wideTableId : "wide_table");
-        fallback.name = "default";
+        fallback.name = "默认指标组";
         return Collections.singletonList(fallback);
       }
       return out;
     } catch (Exception ex) {
       IndicatorGroup fallback = new IndicatorGroup();
       fallback.id = "ig_default_" + (wideTableId != null ? wideTableId : "wide_table");
-      fallback.name = "default";
+      fallback.name = "默认指标组";
       return Collections.singletonList(fallback);
     }
   }

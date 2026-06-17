@@ -1,6 +1,7 @@
 "use client";
 
 import type { ColumnDefinition, IndicatorGroup, WideTable } from "@/lib/types";
+import { buildDefaultIndicatorGroupId } from "@/lib/indicator-groups";
 import { cn } from "@/lib/utils";
 import {
   findIndicatorColumnLabel,
@@ -53,6 +54,8 @@ export default function IndicatorGroupModal({
   onIndicatorGroupChange,
   onDeleteIndicatorGroup,
 }: Props) {
+  const defaultIndicatorGroupId = buildDefaultIndicatorGroupId(selectedWt.id);
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
       <div className="w-full max-w-6xl rounded-xl border bg-card shadow-xl">
@@ -192,13 +195,15 @@ export default function IndicatorGroupModal({
                         placeholder="补充该分组的执行说明"
                       />
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => onDeleteIndicatorGroup(group.id)}
-                      className="rounded-md border border-red-200 px-2 py-1 text-[10px] text-red-600 hover:bg-red-50"
-                    >
-                      删除
-                    </button>
+                    {group.id !== defaultIndicatorGroupId ? (
+                      <button
+                        type="button"
+                        onClick={() => onDeleteIndicatorGroup(group.id)}
+                        className="rounded-md border border-red-200 px-2 py-1 text-[10px] text-red-600 hover:bg-red-50"
+                      >
+                        删除
+                      </button>
+                    ) : null}
                   </div>
                   <div className="text-[11px] text-muted-foreground">
                     已关联 {group.indicatorColumns.length} 个指标

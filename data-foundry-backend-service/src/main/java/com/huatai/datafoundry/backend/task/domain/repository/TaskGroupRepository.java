@@ -32,6 +32,9 @@ public interface TaskGroupRepository {
 
   int updateStatusByIds(List<String> taskGroupIds, String status);
 
+  int updateIndicatorGroupLabel(
+      String requirementId, String wideTableId, String indicatorGroupId, String indicatorGroupName);
+
   int updatePendingSchedule(
       String taskGroupId, String scheduleRuleId, LocalDateTime scheduledAt);
 }

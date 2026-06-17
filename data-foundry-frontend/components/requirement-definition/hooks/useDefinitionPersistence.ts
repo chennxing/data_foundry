@@ -5,6 +5,7 @@ import {
   persistWideTablePreview,
   updateRequirementWideTable,
 } from "@/lib/api-client";
+import { ensureDefaultIndicatorGroup } from "@/lib/indicator-groups";
 import { reconcileTaskPlanChange, resolveCurrentPlanVersion, resolveRecordPlanVersion } from "@/lib/task-plan-reconciliation";
 import {
   generateWideTablePreviewRecords,
@@ -73,49 +74,50 @@ export function useDefinitionPersistence({
     }
 
     const persistWideTableDimensionRows = async (wideTable: WideTable) => {
-      const allRecordsForTable = wideTableRecords.filter((record) => record.wideTableId === wideTable.id);
-      const currentPlanVersion = resolveCurrentPlanVersion(wideTable, allRecordsForTable, taskGroups ?? []);
+      const normalizedWideTable = ensureDefaultIndicatorGroup(wideTable);
+      const allRecordsForTable = wideTableRecords.filter((record) => record.wideTableId === normalizedWideTable.id);
+      const currentPlanVersion = resolveCurrentPlanVersion(normalizedWideTable, allRecordsForTable, taskGroups ?? []);
       const currentPlanRecords = allRecordsForTable.filter(
         (record) => resolveRecordPlanVersion(record, currentPlanVersion) === currentPlanVersion,
       );
 
-      if (wideTable.parameterSource?.mode === "sql") {
+      if (normalizedWideTable.parameterSource?.mode === "sql") {
         await updateRequirementWideTable(requirement.id, {
-          ...wideTable,
+          ...normalizedWideTable,
           parameterRows: [],
           recordCount: 0,
         });
 
         await persistWideTablePreview(
           requirement.id,
-          { ...wideTable, parameterRows: [], recordCount: 0 },
+          { ...normalizedWideTable, parameterRows: [], recordCount: 0 },
           [],
           null,
         );
 
         setScopePreviewDirtyByWideTableId((prev) => ({
           ...prev,
-          [wideTable.id]: false,
+          [normalizedWideTable.id]: false,
         }));
-        handleReplaceWideTableRecords(wideTable.id, []);
+        handleReplaceWideTableRecords(normalizedWideTable.id, []);
         return;
       }
 
-      const excelImport = dimensionExcelImports[wideTable.id];
+      const excelImport = dimensionExcelImports[normalizedWideTable.id];
       const excelRows = excelImport?.rows ?? [];
-      const hasUnsavedScopePreviewChanges = scopePreviewDirtyByWideTableId[wideTable.id] ?? false;
+      const hasUnsavedScopePreviewChanges = scopePreviewDirtyByWideTableId[normalizedWideTable.id] ?? false;
       const useExcelRows = excelRows.length > 0;
       const shouldReusePersistedDimensionRows = Boolean(
         !useExcelRows
         && !hasUnsavedScopePreviewChanges
-        && (wideTable.scopeImport?.importMode === "dimension_rows_csv" || wideTable.scopeImport?.importMode === "parameter_rows_file")
+        && (normalizedWideTable.scopeImport?.importMode === "dimension_rows_csv" || normalizedWideTable.scopeImport?.importMode === "parameter_rows_file")
         && currentPlanRecords.length > 0,
       );
       const preview = shouldReusePersistedDimensionRows
         ? { records: currentPlanRecords, totalCount: currentPlanRecords.length }
         : useExcelRows
-          ? generateWideTablePreviewRecordsFromDimensionRows(wideTable, excelRows, currentPlanRecords, wideTableRecords)
-          : generateWideTablePreviewRecords(wideTable, currentPlanRecords, wideTableRecords);
+          ? generateWideTablePreviewRecordsFromDimensionRows(normalizedWideTable, excelRows, currentPlanRecords, wideTableRecords)
+          : generateWideTablePreviewRecords(normalizedWideTable, currentPlanRecords, wideTableRecords);
 
       if (preview.totalCount > MAX_PERSISTED_DIMENSION_ROWS) {
         throw new Error(`采集参数行数过大（${preview.totalCount}），请缩小时间范围或参数行数量后再保存。`);
@@ -123,7 +125,7 @@ export function useDefinitionPersistence({
 
       const reconcile = reconcileTaskPlanChange({
         requirement,
-        wideTable,
+        wideTable: normalizedWideTable,
         previousRecords: currentPlanRecords,
         nextRecords: preview.records,
         taskGroups: taskGroups ?? [],
@@ -143,20 +145,20 @@ export function useDefinitionPersistence({
         rowId: Number((record as { ROW_ID?: number }).ROW_ID ?? record.id ?? index + 1),
         businessDate: undefined,
         values: Object.fromEntries(
-          wideTable.schema.columns
+          normalizedWideTable.schema.columns
             .filter((column) => column.category === "dimension" && !column.isBusinessDate)
             .map((column) => [column.name, String((record as Record<string, unknown>)[column.name] ?? "")]),
         ),
       }));
 
       await updateRequirementWideTable(requirement.id, {
-        ...wideTable,
+        ...normalizedWideTable,
         parameterRows,
       });
 
       await persistWideTablePreview(
         requirement.id,
-        { ...wideTable, currentPlanVersion: nextPlanVersion },
+        { ...normalizedWideTable, currentPlanVersion: nextPlanVersion },
         recordsWithPlanVersion,
         excelImport
           ? {
@@ -173,9 +175,9 @@ export function useDefinitionPersistence({
       );
       setScopePreviewDirtyByWideTableId((prev) => ({
         ...prev,
-        [wideTable.id]: false,
+        [normalizedWideTable.id]: false,
       }));
-      handleReplaceWideTableRecords(wideTable.id, recordsWithPlanVersion);
+      handleReplaceWideTableRecords(normalizedWideTable.id, recordsWithPlanVersion);
     };
 
     await Promise.all(wideTables.map((wideTable) => persistWideTableDimensionRows(wideTable)));

@@ -106,6 +106,13 @@ public class MybatisFetchTaskRepository implements FetchTaskRepository {
     return fetchTaskMapper.updateStatusAndConfidenceIfCurrent(taskId, expectedStatus, status, confidence);
   }
 
+  @Override
+  public int updateIndicatorGroupName(
+      String requirementId, String wideTableId, String indicatorGroupId, String indicatorGroupName) {
+    return fetchTaskMapper.updateIndicatorGroupName(
+        requirementId, wideTableId, indicatorGroupId, indicatorGroupName);
+  }
+
   private static List<FetchTask> toDomainList(List<FetchTaskRecord> records) {
     if (records == null) return new ArrayList<FetchTask>();
     List<FetchTask> out = new ArrayList<FetchTask>(records.size());

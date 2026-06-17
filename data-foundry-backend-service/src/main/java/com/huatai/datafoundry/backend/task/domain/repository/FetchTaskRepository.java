@@ -36,4 +36,7 @@ public interface FetchTaskRepository {
   int updateStatusAndConfidenceIfCurrent(
       String taskId, String expectedStatus, String status, BigDecimal confidence);
 
+  int updateIndicatorGroupName(
+      String requirementId, String wideTableId, String indicatorGroupId, String indicatorGroupName);
+
 }

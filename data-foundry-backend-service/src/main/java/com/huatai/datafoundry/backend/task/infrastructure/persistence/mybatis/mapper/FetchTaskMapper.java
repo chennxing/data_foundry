@@ -159,4 +159,16 @@ public interface FetchTaskMapper {
       @Param("expectedStatus") String expectedStatus,
       @Param("status") String status,
       @Param("confidence") BigDecimal confidence);
+
+  @Update(
+      "update fetch_tasks "
+          + "set indicator_group_name = #{indicatorGroupName}, name = #{indicatorGroupName}, updated_at = current_timestamp "
+          + "where requirement_id = #{requirementId} "
+          + "and wide_table_id = #{wideTableId} "
+          + "and indicator_group_id = #{indicatorGroupId}")
+  int updateIndicatorGroupName(
+      @Param("requirementId") String requirementId,
+      @Param("wideTableId") String wideTableId,
+      @Param("indicatorGroupId") String indicatorGroupId,
+      @Param("indicatorGroupName") String indicatorGroupName);
 }

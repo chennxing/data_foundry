@@ -98,6 +98,13 @@ public class MybatisTaskGroupRepository implements TaskGroupRepository {
   }
 
   @Override
+  public int updateIndicatorGroupLabel(
+      String requirementId, String wideTableId, String indicatorGroupId, String indicatorGroupName) {
+    return taskGroupMapper.updateIndicatorGroupLabel(
+        requirementId, wideTableId, indicatorGroupId, indicatorGroupName);
+  }
+
+  @Override
   public int updatePendingSchedule(
       String taskGroupId, String scheduleRuleId, LocalDateTime scheduledAt) {
     return taskGroupMapper.updatePendingSchedule(taskGroupId, scheduleRuleId, scheduledAt);

@@ -43,6 +43,10 @@ import type {
   RuntimeSettings,
   ScheduleJob,
 } from "./domain";
+import {
+  DEFAULT_INDICATOR_GROUP_NAME,
+  hydrateDefaultIndicatorGroupAssignments,
+} from "./indicator-groups";
 import { buildApiUrl } from "./api-base";
 import { loadAuthToken, type PermissionUser } from "./auth-permissions";
 import {
@@ -295,7 +299,7 @@ function mapIndicatorGroup(raw: any, wideTableId: string): IndicatorGroup {
     id: raw.id,
     wideTableId,
     name: raw.name,
-    indicatorColumns: raw.indicator_keys ?? raw.indicatorColumns ?? [],
+    indicatorColumns: raw.indicator_columns ?? raw.indicator_keys ?? raw.indicatorColumns ?? [],
     agent: raw.default_agent ?? raw.agent ?? undefined,
     promptTemplate: raw.prompt_template ?? raw.promptTemplate ?? undefined,
     promptConfig: raw.prompt_config ? {
@@ -374,7 +378,7 @@ function mapWideTable(raw: any, requirementId?: string): WideTable {
 
   const businessDateFrequency = normalizeBusinessDateFrequency(bizDate.frequency);
 
-  return normalizeWideTableMode({
+  return hydrateDefaultIndicatorGroupAssignments(normalizeWideTableMode({
     id: raw.id,
     requirementId: raw.requirement_id ?? raw.requirementId ?? requirementId ?? "",
     name: raw.tableName ?? raw.table_name ?? schema.table_name ?? raw.title ?? "",
@@ -416,7 +420,7 @@ function mapWideTable(raw: any, requirementId?: string): WideTable {
     status: raw.status ?? "draft",
     createdAt: fallbackIso(raw.created_at ?? raw.createdAt),
     updatedAt: fallbackIso(raw.updated_at ?? raw.updatedAt),
-  });
+  }));
 }
 
 function mapWideTableScopeImport(raw: any): WideTableScopeImport | undefined {
@@ -1807,7 +1811,7 @@ function buildFallbackIndicatorGroup(wideTable: WideTable): BackendIndicatorGrou
   const fallback = wideTable.indicatorGroups[0];
   return {
     id: fallback?.id ?? `ig_${wideTable.id}_all`,
-    name: fallback?.name ?? "默认分组",
+    name: fallback?.name ?? DEFAULT_INDICATOR_GROUP_NAME,
     indicator_keys: indicatorColumns,
     execution_mode: "agent",
     default_agent: fallback?.agent ?? undefined,

@@ -22,7 +22,8 @@ import type {
 } from "@/lib/types";
 import {
   buildDefaultIndicatorGroupId,
-} from "@/components/requirement-tasks/utils/requirementTaskViews";
+  ensureDefaultIndicatorGroup,
+} from "@/lib/indicator-groups";
 import { formatTaskActionError } from "@/components/requirement-tasks/utils/requirementTaskFormatters";
 
 type Props = {
@@ -81,13 +82,10 @@ export default function useIndicatorGroups({
     updateSelectedWideTable((wideTable) => ({
       ...wideTable,
       indicatorGroups: (() => {
-        const defaultGroupId = buildDefaultIndicatorGroupId(wideTable.id);
-        const existingUserGroups = wideTable.indicatorGroups.filter(
-          (group) => group.id !== defaultGroupId,
-        );
-        const nextIndex = existingUserGroups.length + 1;
+        const normalizedWideTable = ensureDefaultIndicatorGroup(wideTable);
+        const nextIndex = normalizedWideTable.indicatorGroups.length + 1;
         return [
-          ...existingUserGroups,
+          ...normalizedWideTable.indicatorGroups,
           {
             id: `ig_${wideTable.id}_${Date.now()}`,
             wideTableId: wideTable.id,
@@ -107,8 +105,8 @@ export default function useIndicatorGroups({
       ...wideTable,
       indicatorGroups: (() => {
         const defaultGroupId = buildDefaultIndicatorGroupId(wideTable.id);
-        return wideTable.indicatorGroups
-          .filter((group) => group.id !== defaultGroupId && group.id !== groupId)
+        return ensureDefaultIndicatorGroup(wideTable).indicatorGroups
+          .filter((group) => group.id === defaultGroupId || group.id !== groupId)
           .map((group, index) => ({
             ...group,
             priority: index + 1,
@@ -124,7 +122,7 @@ export default function useIndicatorGroups({
   ) => {
     updateSelectedWideTable((wideTable) => ({
       ...wideTable,
-      indicatorGroups: wideTable.indicatorGroups.map((group) => (
+      indicatorGroups: ensureDefaultIndicatorGroup(wideTable).indicatorGroups.map((group) => (
         group.id === groupId ? { ...group, ...patch } : group
       )),
       updatedAt: new Date().toISOString(),
@@ -135,9 +133,7 @@ export default function useIndicatorGroups({
     updateSelectedWideTable((wideTable) => ({
       ...wideTable,
       indicatorGroups: (() => {
-        const defaultGroupId = buildDefaultIndicatorGroupId(wideTable.id);
-        return wideTable.indicatorGroups
-          .filter((group) => group.id !== defaultGroupId)
+        return ensureDefaultIndicatorGroup(wideTable).indicatorGroups
           .map((group) => {
             const nextColumns = group.indicatorColumns.filter((column) => column !== columnName);
             if (group.id === groupId) {
@@ -160,9 +156,7 @@ export default function useIndicatorGroups({
     updateSelectedWideTable((wideTable) => ({
       ...wideTable,
       indicatorGroups: (() => {
-        const defaultGroupId = buildDefaultIndicatorGroupId(wideTable.id);
-        return wideTable.indicatorGroups
-          .filter((group) => group.id !== defaultGroupId)
+        return ensureDefaultIndicatorGroup(wideTable).indicatorGroups
           .map((group) => ({
             ...group,
             indicatorColumns: group.indicatorColumns.filter((column) => column !== columnName),
@@ -250,7 +244,7 @@ export default function useIndicatorGroups({
     }
 
     const now = new Date().toISOString();
-    const nextWideTable = buildWideTableWithPromptDrafts(selectedWt, now);
+    const nextWideTable = buildWideTableWithPromptDrafts(ensureDefaultIndicatorGroup(selectedWt), now);
 
     if (!hasIndicatorColumns) {
       setIndicatorGroupMessage("当前宽表没有指标列，无需配置指标分组。");

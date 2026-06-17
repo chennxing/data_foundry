@@ -56,6 +56,7 @@ import {
   resolveCurrentPlanVersion,
   resolveTaskGroupPlanVersion,
 } from "@/lib/task-plan-reconciliation";
+import { ensureDefaultIndicatorGroup } from "@/lib/indicator-groups";
 import { isStepBComplete } from "@/lib/step-status";
 import {
   canShowTaskGroupRunAction,
@@ -94,8 +95,6 @@ import {
   getTriggerDisplayLabel,
 } from "@/components/requirement-tasks/utils/requirementTaskFormatters";
 import {
-  buildDefaultIndicatorGroup,
-  buildDefaultIndicatorGroupId,
   buildTaskGroupRunSections,
   buildTaskGroupRunViews,
   buildTaskInstanceRowViews,
@@ -355,25 +354,16 @@ export default function RequirementTasksPanel({
     selectedTrialParameterRowKeys,
     usesBusinessDateAxis,
   ]);
-  const defaultIndicatorGroupId = selectedWt ? buildDefaultIndicatorGroupId(selectedWt.id) : "";
   const userDefinedIndicatorGroups = useMemo(
-    () => (
-      selectedWt
-        ? selectedWt.indicatorGroups.filter((group) => group.id !== defaultIndicatorGroupId)
-        : []
-    ),
-    [defaultIndicatorGroupId, selectedWt],
+    () => {
+      if (!selectedWt) {
+        return [];
+      }
+      return ensureDefaultIndicatorGroup(selectedWt).indicatorGroups;
+    },
+    [selectedWt],
   );
   const hasUserDefinedGrouping = userDefinedIndicatorGroups.length > 0;
-  const defaultIndicatorGroup = useMemo(() => {
-    if (!selectedWt) {
-      return null;
-    }
-    return (
-      selectedWt.indicatorGroups.find((group) => group.id === defaultIndicatorGroupId)
-      ?? buildDefaultIndicatorGroup(selectedWt, indicatorColumns)
-    );
-  }, [defaultIndicatorGroupId, indicatorColumns, selectedWt]);
   const effectiveIndicatorGroups = useMemo(() => {
     if (!selectedWt) {
       return [];
@@ -381,13 +371,8 @@ export default function RequirementTasksPanel({
     if (indicatorColumns.length === 0) {
       return [];
     }
-    if (hasUserDefinedGrouping) {
-      return userDefinedIndicatorGroups;
-    }
-    return defaultIndicatorGroup ? [defaultIndicatorGroup] : [];
+    return userDefinedIndicatorGroups;
   }, [
-    defaultIndicatorGroup,
-    hasUserDefinedGrouping,
     indicatorColumns.length,
     selectedWt,
     userDefinedIndicatorGroups,
@@ -415,12 +400,8 @@ export default function RequirementTasksPanel({
     if (!hasIndicatorColumns) {
       return true;
     }
-    if (!hasUserDefinedGrouping) {
-      // 默认不要求分组：所有指标共享一份采集提示词。
-      return true;
-    }
     return isStepBComplete({ ...selectedWt, indicatorGroups: userDefinedIndicatorGroups });
-  }, [hasIndicatorColumns, hasUserDefinedGrouping, selectedWt, userDefinedIndicatorGroups]);
+  }, [hasIndicatorColumns, selectedWt, userDefinedIndicatorGroups]);
   const hasPreviewRecords = currentWideTableRecords.length > 0;
   const currentTaskPlanFingerprint = useMemo(
     () => (
@@ -431,8 +412,7 @@ export default function RequirementTasksPanel({
     [currentWideTableRecords, effectiveWideTable, hasPreviewRecords],
   );
   const isIndicatorGroupingDirty = Boolean(
-    hasUserDefinedGrouping
-    && selectedWt
+    selectedWt
     && isIndicatorGroupingComplete
     && hasPreviewRecords
     && selectedWt.currentPlanFingerprint
@@ -453,9 +433,13 @@ export default function RequirementTasksPanel({
       ? "当前宽表没有指标列，暂不需要任务组拆分。"
     : isIndicatorGroupingDirty
           ? "指标分组已修改，请先保存分组并重建任务组。"
-        : hasUserDefinedGrouping && !isIndicatorGroupingComplete
+        : !isIndicatorGroupingComplete
           ? "请先完成指标分组并覆盖全部指标列，任务才能按“指标组 -> 业务周期 -> 维度组合”正确生成。"
           : "";
+  const taskExecutionBlockerMessage = taskPlanBlockerMessage
+    || (canGenerateTaskPlan && !hasCurrentVersionTaskGroups
+      ? "请先在【采集提示词管理】点击“生成任务组”，生成后才会展示带调度信息的任务组及采集任务实例。"
+      : "");
   const trialEstimatedRows = Math.min(trialFilteredRecords.length, trialMaxRows);
   const trialEstimatedTaskCount = trialEstimatedRows * Math.max(effectiveIndicatorGroups.length, 1);
   const latestTrialTaskGroup = useMemo(
@@ -482,15 +466,9 @@ export default function RequirementTasksPanel({
     if (!hasIndicatorColumns) {
       return [] as WideTable["indicatorGroups"];
     }
-    return hasUserDefinedGrouping
-      ? userDefinedIndicatorGroups
-      : defaultIndicatorGroup
-        ? [defaultIndicatorGroup]
-        : [];
+    return userDefinedIndicatorGroups;
   }, [
-    defaultIndicatorGroup,
     hasIndicatorColumns,
-    hasUserDefinedGrouping,
     selectedWt,
     userDefinedIndicatorGroups,
   ]);
@@ -614,10 +592,11 @@ export default function RequirementTasksPanel({
   const taskGroupRunViews = useMemo(
     () => (
       effectiveWideTable && taskPlan && canGenerateTaskPlan
+        && hasCurrentVersionTaskGroups
         ? buildTaskGroupRunViews(requirement, effectiveWideTable, taskPlan, wtTaskGroups, taskGroupSummaryMap, wtScheduleJobs)
         : []
     ),
-    [canGenerateTaskPlan, effectiveWideTable, requirement, taskPlan, wtScheduleJobs, wtTaskGroups, taskGroupSummaryMap],
+    [canGenerateTaskPlan, effectiveWideTable, hasCurrentVersionTaskGroups, requirement, taskPlan, wtScheduleJobs, wtTaskGroups, taskGroupSummaryMap],
   );
   const taskGroupRunSections = useMemo(
     () => (
@@ -1239,7 +1218,7 @@ export default function RequirementTasksPanel({
         <TaskExecutionTab
           wideTableName={selectedWt.name}
           taskActionMessage={taskActionMessage}
-          taskPlanBlockerMessage={taskPlanBlockerMessage}
+          taskPlanBlockerMessage={taskExecutionBlockerMessage}
           usesBusinessDateAxis={usesBusinessDateAxis}
           historicalDateCount={taskPlan?.historicalDateCount ?? 0}
           taskGroupRunViews={taskGroupRunViews}

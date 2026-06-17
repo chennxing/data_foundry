@@ -212,6 +212,18 @@ public interface TaskGroupMapper {
   int updateStatusByIds(@Param("ids") List<String> ids, @Param("status") String status);
 
   @Update(
+      "update task_groups "
+          + "set partition_label = #{indicatorGroupName}, updated_at = current_timestamp "
+          + "where requirement_id = #{requirementId} "
+          + "and wide_table_id = #{wideTableId} "
+          + "and (indicator_group_id = #{indicatorGroupId} or partition_key = #{indicatorGroupId})")
+  int updateIndicatorGroupLabel(
+      @Param("requirementId") String requirementId,
+      @Param("wideTableId") String wideTableId,
+      @Param("indicatorGroupId") String indicatorGroupId,
+      @Param("indicatorGroupName") String indicatorGroupName);
+
+  @Update(
       "update task_groups set schedule_rule_id = #{scheduleRuleId}, "
           + "scheduled_at = #{scheduledAt}, updated_at = current_timestamp "
           + "where id = #{id} and status = 'pending' and upper(source_type) = 'SCHEDULED'")

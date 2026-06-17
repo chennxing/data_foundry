@@ -311,6 +311,45 @@ public class RequirementAppService {
             ? (Map<String, Object>) body.get("scope_import")
             : null;
 
+    if (body != null) {
+      Object scope = body.get("scope");
+      Object scheduleRules = body.get("schedule_rules");
+      if (scope != null || scheduleRules != null) {
+        ScheduleScopeValidator.validate(scope, scheduleRules);
+      }
+
+      boolean hasConfigPatch = false;
+      WideTable previewConfig = new WideTable();
+      previewConfig.setId(wideTableId);
+      previewConfig.setRequirementId(requirementId);
+      if (scope != null) {
+        previewConfig.setScopeJson(writeJson(scope));
+        hasConfigPatch = true;
+      }
+      if (body.get("indicator_groups") != null) {
+        previewConfig.setIndicatorGroupsJson(writeJson(body.get("indicator_groups")));
+        hasConfigPatch = true;
+      }
+      if (scheduleRules != null) {
+        previewConfig.setScheduleRulesJson(writeJson(scheduleRules));
+        hasConfigPatch = true;
+      }
+      if (body.get("semantic_time_axis") != null) {
+        previewConfig.setSemanticTimeAxis(String.valueOf(body.get("semantic_time_axis")));
+        hasConfigPatch = true;
+      }
+      if (body.get("collection_coverage_mode") != null) {
+        previewConfig.setCollectionCoverageMode(String.valueOf(body.get("collection_coverage_mode")));
+        hasConfigPatch = true;
+      }
+      if (hasConfigPatch) {
+        requirementRepository.updateWideTableByIdAndRequirement(previewConfig);
+      }
+      if (body.get("indicator_groups") != null) {
+        taskPlanAppService.syncIndicatorGroupLabels(requirementId, wideTableId);
+      }
+    }
+
     if (rowsProvided && (rows == null || rows.isEmpty())) {
       wideTableRowMapper.deleteByWideTableId(wideTableId);
 
@@ -440,6 +479,9 @@ public class RequirementAppService {
             String.valueOf(body.get("collection_coverage_mode")));
       }
       requirementRepository.updateWideTableByIdAndRequirement(planConfig);
+      if (body.get("indicator_groups") != null) {
+        taskPlanAppService.syncIndicatorGroupLabels(requirementId, wideTableId);
+      }
 
       Object taskGroupsObj = body.get("task_groups");
       if (taskGroupsObj instanceof List) {

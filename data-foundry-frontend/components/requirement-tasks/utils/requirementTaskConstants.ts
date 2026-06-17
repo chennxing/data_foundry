@@ -8,7 +8,7 @@ export const triggerLabel: Record<string, string> = {
   trial: "试运行",
 };
 
-export const DEFAULT_INDICATOR_GROUP_PREFIX = "ig_default_";
+export { DEFAULT_INDICATOR_GROUP_PREFIX } from "@/lib/indicator-groups";
 
 export const GROUP_TONE_CLASSES = [
   "border-sky-200 bg-sky-50 text-sky-700",
