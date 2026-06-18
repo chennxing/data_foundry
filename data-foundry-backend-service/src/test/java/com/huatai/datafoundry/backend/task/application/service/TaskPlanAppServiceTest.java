@@ -357,6 +357,380 @@ public class TaskPlanAppServiceTest {
   }
 
   @Test
+  void syncPlanFromConfigAddsTaskGroupsForEveryIndicatorGroup() {
+    WideTableReadRepository wideTableRepository = Mockito.mock(WideTableReadRepository.class);
+    TaskGroupRepository taskGroupRepository = Mockito.mock(TaskGroupRepository.class);
+    FetchTaskRepository fetchTaskRepository = Mockito.mock(FetchTaskRepository.class);
+    ScheduleRuleSyncAppService ruleSyncAppService =
+        Mockito.mock(ScheduleRuleSyncAppService.class);
+    TaskPlanAppService svc =
+        new TaskPlanAppService(
+            wideTableRepository,
+            taskGroupRepository,
+            fetchTaskRepository,
+            new TaskPlanDomainService(),
+            null,
+            null,
+            null,
+            ruleSyncAppService,
+            new SchedulePlanningTimeCalculator(),
+            new ObjectMapper());
+
+    YearMonth current = YearMonth.now();
+    WideTablePlanSource wideTable = new WideTablePlanSource();
+    wideTable.setId("WT1");
+    wideTable.setRequirementId("R1");
+    wideTable.setSchemaVersion(1);
+    wideTable.setScopeJson(
+        "{\"business_date\":{\"frequency\":\"MONTHLY\",\"start\":\""
+            + current
+            + "\",\"end\":\""
+            + current.plusMonths(1)
+            + "\"}}");
+    wideTable.setIndicatorGroupsJson(
+        "[{\"id\":\"ig-1\",\"name\":\"Group 1\",\"indicator_columns\":[\"a\"]},"
+            + "{\"id\":\"ig-2\",\"name\":\"Group 2\",\"indicator_columns\":[\"b\"]}]");
+    when(wideTableRepository.getByIdForRequirement("R1", "WT1")).thenReturn(wideTable);
+
+    ScheduleRule rule1 = new ScheduleRule();
+    rule1.setId("sr-1");
+    rule1.setIndicatorGroupId("ig-1");
+    rule1.setFrequency("MONTHLY");
+    rule1.setBusinessDateOffsetDays(Integer.valueOf(1));
+    rule1.setTriggerTime(LocalTime.of(9, 0));
+    ScheduleRule rule2 = new ScheduleRule();
+    rule2.setId("sr-2");
+    rule2.setIndicatorGroupId("ig-2");
+    rule2.setFrequency("MONTHLY");
+    rule2.setBusinessDateOffsetDays(Integer.valueOf(1));
+    rule2.setTriggerTime(LocalTime.of(20, 0));
+    Map<String, ScheduleRule> rules = new HashMap<String, ScheduleRule>();
+    rules.put("ig-1", rule1);
+    rules.put("ig-2", rule2);
+    when(ruleSyncAppService.sync(wideTable)).thenReturn(rules);
+
+    TaskGroup existing = new TaskGroup();
+    existing.setId(
+        new TaskPlanDomainService().buildTaskGroupId("WT1", current.toString(), "ig-1", 23));
+    existing.setRequirementId("R1");
+    existing.setWideTableId("WT1");
+    existing.setPlanVersion(23);
+    existing.setStatus("pending");
+    when(taskGroupRepository.listByRequirementAndWideTable("R1", "WT1"))
+        .thenReturn(Collections.singletonList(existing));
+    when(taskGroupRepository.listByIds(anyList())).thenReturn(Collections.singletonList(existing));
+    when(fetchTaskRepository.listByTaskGroup(anyString()))
+        .thenReturn(Collections.<FetchTask>emptyList());
+
+    svc.syncPlanTaskGroupsFromWideTableConfig("R1", "WT1", false);
+
+    @SuppressWarnings("unchecked")
+    ArgumentCaptor<List<TaskGroup>> captor = ArgumentCaptor.forClass((Class) List.class);
+    verify(taskGroupRepository).upsertBatch(captor.capture());
+    assertEquals(4, captor.getValue().size());
+
+    int group2Count = 0;
+    for (TaskGroup taskGroup : captor.getValue()) {
+      if ("ig-2".equals(taskGroup.getIndicatorGroupId())) {
+        group2Count++;
+        assertEquals("Group 2", taskGroup.getPartitionLabel());
+        assertEquals("sr-2", taskGroup.getScheduleRuleId());
+        assertEquals(Integer.valueOf(23), taskGroup.getPlanVersion());
+      }
+    }
+    assertEquals(2, group2Count);
+    verify(fetchTaskRepository, Mockito.times(4)).upsertBatch(anyList());
+  }
+
+  @Test
+  void syncPlanFromConfigInvalidatesPendingTaskGroupsForEmptyIndicatorGroups() {
+    WideTableReadRepository wideTableRepository = Mockito.mock(WideTableReadRepository.class);
+    TaskGroupRepository taskGroupRepository = Mockito.mock(TaskGroupRepository.class);
+    FetchTaskRepository fetchTaskRepository = Mockito.mock(FetchTaskRepository.class);
+    ScheduleRuleSyncAppService ruleSyncAppService =
+        Mockito.mock(ScheduleRuleSyncAppService.class);
+    TaskPlanAppService svc =
+        new TaskPlanAppService(
+            wideTableRepository,
+            taskGroupRepository,
+            fetchTaskRepository,
+            new TaskPlanDomainService(),
+            null,
+            null,
+            null,
+            ruleSyncAppService,
+            new SchedulePlanningTimeCalculator(),
+            new ObjectMapper());
+
+    YearMonth current = YearMonth.now();
+    WideTablePlanSource wideTable = new WideTablePlanSource();
+    wideTable.setId("WT1");
+    wideTable.setRequirementId("R1");
+    wideTable.setSchemaVersion(1);
+    wideTable.setScopeJson(
+        "{\"business_date\":{\"frequency\":\"MONTHLY\",\"start\":\""
+            + current
+            + "\",\"end\":\""
+            + current
+            + "\"}}");
+    wideTable.setIndicatorGroupsJson(
+        "[{\"id\":\"ig-active\",\"name\":\"Active\",\"indicator_columns\":[\"a\"]},"
+            + "{\"id\":\"ig-empty\",\"name\":\"Empty\",\"indicator_columns\":[]}]");
+    when(wideTableRepository.getByIdForRequirement("R1", "WT1")).thenReturn(wideTable);
+
+    ScheduleRule rule = new ScheduleRule();
+    rule.setId("sr-active");
+    rule.setIndicatorGroupId("ig-active");
+    rule.setFrequency("MONTHLY");
+    rule.setBusinessDateOffsetDays(Integer.valueOf(1));
+    rule.setTriggerTime(LocalTime.of(9, 0));
+    when(ruleSyncAppService.sync(wideTable))
+        .thenReturn(Collections.singletonMap("ig-active", rule));
+
+    TaskGroup emptyGroup = new TaskGroup();
+    emptyGroup.setId("TG_EMPTY");
+    emptyGroup.setRequirementId("R1");
+    emptyGroup.setWideTableId("WT1");
+    emptyGroup.setIndicatorGroupId("ig-empty");
+    emptyGroup.setStatus("pending");
+    emptyGroup.setPlanVersion(3);
+    when(taskGroupRepository.listByRequirementAndWideTable("R1", "WT1"))
+        .thenReturn(Collections.singletonList(emptyGroup));
+    when(taskGroupRepository.listByIds(anyList())).thenReturn(Collections.<TaskGroup>emptyList());
+    when(fetchTaskRepository.listByTaskGroup(anyString()))
+        .thenReturn(Collections.<FetchTask>emptyList());
+
+    svc.syncPlanTaskGroupsFromWideTableConfig("R1", "WT1", true);
+
+    @SuppressWarnings("unchecked")
+    ArgumentCaptor<List<TaskGroup>> taskGroupCaptor = ArgumentCaptor.forClass((Class) List.class);
+    verify(taskGroupRepository).upsertBatch(taskGroupCaptor.capture());
+    assertEquals(1, taskGroupCaptor.getValue().size());
+    assertEquals("ig-active", taskGroupCaptor.getValue().get(0).getIndicatorGroupId());
+
+    @SuppressWarnings("unchecked")
+    ArgumentCaptor<List<String>> invalidatedCaptor = ArgumentCaptor.forClass((Class) List.class);
+    verify(taskGroupRepository).updateStatusByIds(invalidatedCaptor.capture(), Mockito.eq("invalidated"));
+    assertEquals(1, invalidatedCaptor.getValue().size());
+    assertEquals("TG_EMPTY", invalidatedCaptor.getValue().get(0));
+  }
+
+  @Test
+  void syncPlanFromConfigKeepsCompletedHistoryForRemovedIndicatorGroups() {
+    WideTableReadRepository wideTableRepository = Mockito.mock(WideTableReadRepository.class);
+    TaskGroupRepository taskGroupRepository = Mockito.mock(TaskGroupRepository.class);
+    FetchTaskRepository fetchTaskRepository = Mockito.mock(FetchTaskRepository.class);
+    ScheduleRuleSyncAppService ruleSyncAppService =
+        Mockito.mock(ScheduleRuleSyncAppService.class);
+    TaskPlanAppService svc =
+        new TaskPlanAppService(
+            wideTableRepository,
+            taskGroupRepository,
+            fetchTaskRepository,
+            new TaskPlanDomainService(),
+            null,
+            null,
+            null,
+            ruleSyncAppService,
+            new SchedulePlanningTimeCalculator(),
+            new ObjectMapper());
+
+    YearMonth current = YearMonth.now();
+    WideTablePlanSource wideTable = new WideTablePlanSource();
+    wideTable.setId("WT1");
+    wideTable.setRequirementId("R1");
+    wideTable.setSchemaVersion(1);
+    wideTable.setScopeJson(
+        "{\"business_date\":{\"frequency\":\"MONTHLY\",\"start\":\""
+            + current
+            + "\",\"end\":\""
+            + current
+            + "\"}}");
+    wideTable.setIndicatorGroupsJson(
+        "[{\"id\":\"ig-active\",\"name\":\"Active\",\"indicator_columns\":[\"a\"]}]");
+    when(wideTableRepository.getByIdForRequirement("R1", "WT1")).thenReturn(wideTable);
+
+    ScheduleRule rule = new ScheduleRule();
+    rule.setId("sr-active");
+    rule.setIndicatorGroupId("ig-active");
+    rule.setFrequency("MONTHLY");
+    rule.setBusinessDateOffsetDays(Integer.valueOf(1));
+    rule.setTriggerTime(LocalTime.of(9, 0));
+    when(ruleSyncAppService.sync(wideTable))
+        .thenReturn(Collections.singletonMap("ig-active", rule));
+
+    TaskGroup completedHistory = new TaskGroup();
+    completedHistory.setId("TG_HISTORY");
+    completedHistory.setRequirementId("R1");
+    completedHistory.setWideTableId("WT1");
+    completedHistory.setIndicatorGroupId("ig-removed");
+    completedHistory.setStatus("completed");
+    completedHistory.setPlanVersion(2);
+    when(taskGroupRepository.listByRequirementAndWideTable("R1", "WT1"))
+        .thenReturn(Collections.singletonList(completedHistory));
+    when(taskGroupRepository.listByIds(anyList())).thenReturn(Collections.<TaskGroup>emptyList());
+    when(fetchTaskRepository.listByTaskGroup(anyString()))
+        .thenReturn(Collections.<FetchTask>emptyList());
+
+    svc.syncPlanTaskGroupsFromWideTableConfig("R1", "WT1", true);
+
+    verify(taskGroupRepository, never()).updateStatusByIds(anyList(), Mockito.eq("invalidated"));
+  }
+
+  @Test
+  void syncPlanFromConfigRestoresInvalidatedTaskGroupWhenIndicatorGroupIsStillActive() {
+    WideTableReadRepository wideTableRepository = Mockito.mock(WideTableReadRepository.class);
+    TaskGroupRepository taskGroupRepository = Mockito.mock(TaskGroupRepository.class);
+    FetchTaskRepository fetchTaskRepository = Mockito.mock(FetchTaskRepository.class);
+    ScheduleRuleSyncAppService ruleSyncAppService =
+        Mockito.mock(ScheduleRuleSyncAppService.class);
+    TaskPlanDomainService domainService = new TaskPlanDomainService();
+    TaskPlanAppService svc =
+        new TaskPlanAppService(
+            wideTableRepository,
+            taskGroupRepository,
+            fetchTaskRepository,
+            domainService,
+            null,
+            null,
+            null,
+            ruleSyncAppService,
+            new SchedulePlanningTimeCalculator(),
+            new ObjectMapper());
+
+    YearMonth current = YearMonth.now();
+    WideTablePlanSource wideTable = new WideTablePlanSource();
+    wideTable.setId("WT1");
+    wideTable.setRequirementId("R1");
+    wideTable.setSchemaVersion(1);
+    wideTable.setScopeJson(
+        "{\"business_date\":{\"frequency\":\"MONTHLY\",\"start\":\""
+            + current
+            + "\",\"end\":\""
+            + current
+            + "\"}}");
+    wideTable.setIndicatorGroupsJson(
+        "[{\"id\":\"ig-active\",\"name\":\"Active\",\"indicator_columns\":[\"a\"]}]");
+    when(wideTableRepository.getByIdForRequirement("R1", "WT1")).thenReturn(wideTable);
+
+    ScheduleRule rule = new ScheduleRule();
+    rule.setId("sr-active");
+    rule.setIndicatorGroupId("ig-active");
+    rule.setFrequency("MONTHLY");
+    rule.setBusinessDateOffsetDays(Integer.valueOf(1));
+    rule.setTriggerTime(LocalTime.of(9, 0));
+    when(ruleSyncAppService.sync(wideTable))
+        .thenReturn(Collections.singletonMap("ig-active", rule));
+
+    TaskGroup existing = new TaskGroup();
+    existing.setId(domainService.buildTaskGroupId("WT1", current.toString(), "ig-active", 7));
+    existing.setRequirementId("R1");
+    existing.setWideTableId("WT1");
+    existing.setIndicatorGroupId("ig-active");
+    existing.setStatus("invalidated");
+    existing.setPlanVersion(7);
+    when(taskGroupRepository.listByRequirementAndWideTable("R1", "WT1"))
+        .thenReturn(Collections.singletonList(existing));
+    when(taskGroupRepository.listByIds(anyList())).thenReturn(Collections.singletonList(existing));
+    when(fetchTaskRepository.listByTaskGroup(anyString()))
+        .thenReturn(Collections.<FetchTask>emptyList());
+
+    svc.syncPlanTaskGroupsFromWideTableConfig("R1", "WT1", true);
+
+    @SuppressWarnings("unchecked")
+    ArgumentCaptor<List<TaskGroup>> captor = ArgumentCaptor.forClass((Class) List.class);
+    verify(taskGroupRepository).upsertBatch(captor.capture());
+    assertEquals(1, captor.getValue().size());
+    assertEquals(existing.getId(), captor.getValue().get(0).getId());
+    assertEquals("pending", captor.getValue().get(0).getStatus());
+    verify(taskGroupRepository, never()).updateStatusByIds(anyList(), Mockito.eq("invalidated"));
+  }
+
+  @Test
+  void syncPlanFromConfigInvalidatesFrontendSkeletonIdAndKeepsCanonicalTaskGroup() {
+    WideTableReadRepository wideTableRepository = Mockito.mock(WideTableReadRepository.class);
+    TaskGroupRepository taskGroupRepository = Mockito.mock(TaskGroupRepository.class);
+    FetchTaskRepository fetchTaskRepository = Mockito.mock(FetchTaskRepository.class);
+    ScheduleRuleSyncAppService ruleSyncAppService =
+        Mockito.mock(ScheduleRuleSyncAppService.class);
+    TaskPlanDomainService domainService = new TaskPlanDomainService();
+    TaskPlanAppService svc =
+        new TaskPlanAppService(
+            wideTableRepository,
+            taskGroupRepository,
+            fetchTaskRepository,
+            domainService,
+            null,
+            null,
+            null,
+            ruleSyncAppService,
+            new SchedulePlanningTimeCalculator(),
+            new ObjectMapper());
+
+    YearMonth current = YearMonth.now();
+    WideTablePlanSource wideTable = new WideTablePlanSource();
+    wideTable.setId("WT1");
+    wideTable.setRequirementId("R1");
+    wideTable.setSchemaVersion(1);
+    wideTable.setScopeJson(
+        "{\"business_date\":{\"frequency\":\"MONTHLY\",\"start\":\""
+            + current
+            + "\",\"end\":\""
+            + current
+            + "\"}}");
+    wideTable.setIndicatorGroupsJson(
+        "[{\"id\":\"ig-active\",\"name\":\"Active\",\"indicator_columns\":[\"a\"]}]");
+    when(wideTableRepository.getByIdForRequirement("R1", "WT1")).thenReturn(wideTable);
+
+    ScheduleRule rule = new ScheduleRule();
+    rule.setId("sr-active");
+    rule.setIndicatorGroupId("ig-active");
+    rule.setFrequency("MONTHLY");
+    rule.setBusinessDateOffsetDays(Integer.valueOf(1));
+    rule.setTriggerTime(LocalTime.of(9, 0));
+    when(ruleSyncAppService.sync(wideTable))
+        .thenReturn(Collections.singletonMap("ig-active", rule));
+
+    String canonicalId = domainService.buildTaskGroupId("WT1", current.toString(), "ig-active", 5);
+    TaskGroup canonical = new TaskGroup();
+    canonical.setId(canonicalId);
+    canonical.setRequirementId("R1");
+    canonical.setWideTableId("WT1");
+    canonical.setIndicatorGroupId("ig-active");
+    canonical.setStatus("pending");
+    canonical.setPlanVersion(5);
+
+    TaskGroup frontendSkeleton = new TaskGroup();
+    frontendSkeleton.setId("tg_frontend_skeleton_" + current.toString().replace("-", ""));
+    frontendSkeleton.setRequirementId("R1");
+    frontendSkeleton.setWideTableId("WT1");
+    frontendSkeleton.setIndicatorGroupId("ig-active");
+    frontendSkeleton.setStatus("pending");
+    frontendSkeleton.setPlanVersion(5);
+
+    when(taskGroupRepository.listByRequirementAndWideTable("R1", "WT1"))
+        .thenReturn(Arrays.asList(canonical, frontendSkeleton));
+    when(taskGroupRepository.listByIds(anyList())).thenReturn(Collections.singletonList(canonical));
+    when(fetchTaskRepository.listByTaskGroup(anyString()))
+        .thenReturn(Collections.<FetchTask>emptyList());
+
+    svc.syncPlanTaskGroupsFromWideTableConfig("R1", "WT1", true);
+
+    @SuppressWarnings("unchecked")
+    ArgumentCaptor<List<TaskGroup>> taskGroupCaptor = ArgumentCaptor.forClass((Class) List.class);
+    verify(taskGroupRepository).upsertBatch(taskGroupCaptor.capture());
+    assertEquals(1, taskGroupCaptor.getValue().size());
+    assertEquals(canonicalId, taskGroupCaptor.getValue().get(0).getId());
+    assertEquals("pending", taskGroupCaptor.getValue().get(0).getStatus());
+
+    @SuppressWarnings("unchecked")
+    ArgumentCaptor<List<String>> invalidatedCaptor = ArgumentCaptor.forClass((Class) List.class);
+    verify(taskGroupRepository).updateStatusByIds(invalidatedCaptor.capture(), Mockito.eq("invalidated"));
+    assertEquals(1, invalidatedCaptor.getValue().size());
+    assertEquals(frontendSkeleton.getId(), invalidatedCaptor.getValue().get(0));
+  }
+
+  @Test
   void persistPlanRejectsCrossAggregateOverwrite() {
     TaskGroupRepository taskGroupRepository = Mockito.mock(TaskGroupRepository.class);
     TaskPlanAppService svc =

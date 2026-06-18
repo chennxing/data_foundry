@@ -54,7 +54,6 @@ import {
   buildTaskPlanFingerprint,
   resolveRecordPlanVersion,
   resolveCurrentPlanVersion,
-  resolveTaskGroupPlanVersion,
 } from "@/lib/task-plan-reconciliation";
 import { ensureDefaultIndicatorGroup } from "@/lib/indicator-groups";
 import { isStepBComplete } from "@/lib/step-status";
@@ -253,16 +252,16 @@ export default function RequirementTasksPanel({
     ),
     [currentPlanVersion, selectedWideTableRecords],
   );
-  const hasCurrentVersionTaskGroups = useMemo(
+  const hasPersistedTaskGroups = useMemo(
     () => Boolean(
       selectedWt && taskGroups.some(
         (taskGroup) =>
           taskGroup.wideTableId === selectedWt.id
           && taskGroup.triggeredBy !== "trial"
-          && resolveTaskGroupPlanVersion(taskGroup, currentPlanVersion) === currentPlanVersion,
+          && taskGroup.status !== "invalidated",
       ),
     ),
-    [currentPlanVersion, selectedWt, taskGroups],
+    [selectedWt, taskGroups],
   );
   const indicatorColumns = useMemo(
     () => selectedWt?.schema.columns.filter((column) => column.category === "indicator") ?? [],
@@ -437,7 +436,7 @@ export default function RequirementTasksPanel({
           ? "请先完成指标分组并覆盖全部指标列，任务才能按“指标组 -> 业务周期 -> 维度组合”正确生成。"
           : "";
   const taskExecutionBlockerMessage = taskPlanBlockerMessage
-    || (canGenerateTaskPlan && !hasCurrentVersionTaskGroups
+    || (canGenerateTaskPlan && !hasPersistedTaskGroups
       ? "请先在【采集提示词管理】点击“生成任务组”，生成后才会展示带调度信息的任务组及采集任务实例。"
       : "");
   const trialEstimatedRows = Math.min(trialFilteredRecords.length, trialMaxRows);
@@ -537,6 +536,10 @@ export default function RequirementTasksPanel({
     onReplaceWideTableRecords,
     onTaskGroupsChange,
     onFetchTasksChange,
+    onTaskRuntimeChange: (nextTaskGroups, nextFetchTasks) => {
+      onTaskGroupsChange(nextTaskGroups);
+      onFetchTasksChange(nextFetchTasks);
+    },
     onRequirementChange,
     onRefreshData,
     buildWideTableWithPromptDrafts,
@@ -544,17 +547,17 @@ export default function RequirementTasksPanel({
 
   const wtTaskGroups = useMemo(
     () => (
-      needsScopeRefresh || !canGenerateTaskPlan
+      !selectedWtId
         ? []
         : taskGroups
             .filter(
               (tg) =>
                 tg.wideTableId === selectedWtId
-                && resolveTaskGroupPlanVersion(tg, currentPlanVersion) === currentPlanVersion,
+                && tg.status !== "invalidated",
             )
-            .sort((a, b) => b.businessDate.localeCompare(a.businessDate))
+            .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
     ),
-    [canGenerateTaskPlan, currentPlanVersion, needsScopeRefresh, selectedWtId, taskGroups],
+    [selectedWtId, taskGroups],
   );
 
   const toggleTaskGroupExpand = (tgId: string) => {
@@ -591,12 +594,18 @@ export default function RequirementTasksPanel({
   );
   const taskGroupRunViews = useMemo(
     () => (
-      effectiveWideTable && taskPlan && canGenerateTaskPlan
-        && hasCurrentVersionTaskGroups
-        ? buildTaskGroupRunViews(requirement, effectiveWideTable, taskPlan, wtTaskGroups, taskGroupSummaryMap, wtScheduleJobs)
+      effectiveWideTable && taskPlan && wtTaskGroups.length > 0
+        ? buildTaskGroupRunViews(
+            requirement,
+            effectiveWideTable,
+            taskPlan,
+            wtTaskGroups,
+            taskGroupSummaryMap,
+            wtScheduleJobs,
+          ).filter((taskGroup) => taskGroup.isReal)
         : []
     ),
-    [canGenerateTaskPlan, effectiveWideTable, hasCurrentVersionTaskGroups, requirement, taskPlan, wtScheduleJobs, wtTaskGroups, taskGroupSummaryMap],
+    [effectiveWideTable, requirement, taskPlan, wtScheduleJobs, wtTaskGroups, taskGroupSummaryMap],
   );
   const taskGroupRunSections = useMemo(
     () => (
@@ -1113,7 +1122,7 @@ export default function RequirementTasksPanel({
           canGenerateTaskPlan={canGenerateTaskPlan}
           needsScopeRefresh={needsScopeRefresh}
           isPersistingIndicatorGroups={isPersistingIndicatorGroups}
-          hasCurrentVersionTaskGroups={hasCurrentVersionTaskGroups}
+          hasCurrentVersionTaskGroups={hasPersistedTaskGroups}
           taskPlanBlockerMessage={taskPlanBlockerMessage}
           promptSaveMessage={promptSaveMessage}
           isPersistingPrompts={isPersistingPrompts}
@@ -1157,7 +1166,7 @@ export default function RequirementTasksPanel({
           columnGroupMap={columnGroupMap}
           userDefinedIndicatorGroups={userDefinedIndicatorGroups}
           isIndicatorGroupingComplete={isIndicatorGroupingComplete}
-          hasCurrentVersionTaskGroups={hasCurrentVersionTaskGroups}
+          hasCurrentVersionTaskGroups={hasPersistedTaskGroups}
           onAddIndicatorGroup={handleAddIndicatorGroup}
           onPersistIndicatorGroups={() => void handlePersistIndicatorGroups()}
           onClose={closeIndicatorGroupModal}

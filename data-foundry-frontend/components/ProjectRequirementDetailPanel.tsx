@@ -85,6 +85,7 @@ export default function ProjectRequirementDetailPanel({
   const [acceptanceTicketsState, setAcceptanceTicketsState] = useState<AcceptanceTicket[]>(acceptanceTickets);
   const [operationalDataLoaded, setOperationalDataLoaded] = useState<boolean>(initialOperationalDataLoaded);
   const [operationalLoading, setOperationalLoading] = useState(false);
+  const [operationalLoadError, setOperationalLoadError] = useState("");
   const hydrated = true;
   const fallbackBackTarget = resolveBackTarget(project.id, navSource, viewMode);
 
@@ -106,6 +107,7 @@ export default function ProjectRequirementDetailPanel({
     setAcceptanceTicketsState(acceptanceTickets);
     setOperationalDataLoaded(initialOperationalDataLoaded);
     setOperationalLoading(false);
+    setOperationalLoadError("");
   }, [project, initialRequirements, wideTables, wideTableRecords, taskGroups, fetchTasks, scheduleJobs, acceptanceTickets, initialOperationalDataLoaded]);
 
   const requirement = useMemo(
@@ -215,6 +217,8 @@ export default function ProjectRequirementDetailPanel({
         : prev.filter((run) => refreshedTaskGroupIds.has(run.taskGroupId))
     ));
     setAcceptanceTicketsState(data.acceptanceTickets ?? []);
+    setOperationalDataLoaded(true);
+    setOperationalLoadError("");
   };
 
   if (!requirement) {
@@ -367,6 +371,13 @@ export default function ProjectRequirementDetailPanel({
           ...data.acceptanceTickets,
         ]);
         setOperationalDataLoaded(true);
+        setOperationalLoadError("");
+      })
+      .catch((error) => {
+        if (cancelled) {
+          return;
+        }
+        setOperationalLoadError(formatOperationalLoadError(error));
       })
       .finally(() => {
         if (!cancelled) {
@@ -426,6 +437,12 @@ export default function ProjectRequirementDetailPanel({
       {activeTab !== "requirement" && !operationalDataLoaded ? (
         <div className="rounded-xl border bg-card px-4 py-6 text-sm text-muted-foreground">
           {operationalLoading ? "正在加载任务与验收数据..." : "准备加载任务与验收数据..."}
+        </div>
+      ) : null}
+
+      {activeTab !== "requirement" && operationalLoadError ? (
+        <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-900">
+          {operationalLoadError}
         </div>
       ) : null}
 
@@ -538,6 +555,16 @@ export default function ProjectRequirementDetailPanel({
       ) : null}
     </div>
   );
+}
+
+function formatOperationalLoadError(error: unknown): string {
+  if (error instanceof Error) {
+    const message = error.message.trim();
+    if (message !== "") {
+      return `加载任务与验收数据失败：${message}`;
+    }
+  }
+  return `加载任务与验收数据失败：${String(error ?? "未知错误")}`;
 }
 
 function TabLink({

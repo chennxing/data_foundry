@@ -395,6 +395,48 @@ public class TaskPlanAppService {
   }
 
   @Transactional
+  public void syncPlanTaskGroupsFromWideTableConfig(
+      String requirementId, String wideTableId, boolean invalidateMissing) {
+    WideTablePlanSource wideTable = wideTableReadRepository.getByIdForRequirement(requirementId, wideTableId);
+    if (wideTable == null) {
+      return;
+    }
+    List<IndicatorGroup> indicatorGroups = parseIndicatorGroups(wideTable.getIndicatorGroupsJson(), wideTableId);
+    indicatorGroups = filterActiveIndicatorGroups(indicatorGroups);
+    if (indicatorGroups.isEmpty()) {
+      if (scheduleRuleSyncAppService != null) {
+        scheduleRuleSyncAppService.sync(wideTable);
+      }
+      invalidateMissingPendingTaskGroups(requirementId, wideTableId, Collections.<String>emptySet());
+      return;
+    }
+    Scope scope = parseScope(wideTable.getScopeJson());
+    List<String> businessDates = taskPlanDomainService.buildBusinessDates(scope);
+    if (businessDates.isEmpty()) {
+      return;
+    }
+    ScheduleFrequency frequency = ScheduleFrequency.parse(normalizeFrequency(scope.frequency));
+    Map<String, ScheduleRule> rulesByIndicatorGroup =
+        scheduleRuleSyncAppService != null
+            ? scheduleRuleSyncAppService.sync(wideTable)
+            : Collections.<String, ScheduleRule>emptyMap();
+    List<ParameterRow> parameterRows = resolveScopeParameterRows(scope);
+    int planVersion = resolveCurrentPlanVersion(requirementId, wideTableId);
+    List<TaskGroup> records =
+        buildPlanTaskGroupsFromConfig(
+            requirementId,
+            wideTableId,
+            businessDates,
+            indicatorGroups,
+            scope,
+            parameterRows,
+            frequency,
+            rulesByIndicatorGroup,
+            planVersion);
+    persistTaskGroupRecords(requirementId, wideTableId, records, indicatorGroups, invalidateMissing);
+  }
+
+  @Transactional
   public void syncIndicatorGroupLabels(String requirementId, String wideTableId) {
     WideTablePlanSource wideTable = wideTableReadRepository.getByIdForRequirement(requirementId, wideTableId);
     List<IndicatorGroup> indicatorGroups = parseIndicatorGroups(
@@ -414,6 +456,7 @@ public class TaskPlanAppService {
     List<IndicatorGroup> indicatorGroups = parseIndicatorGroups(
         wideTable != null ? wideTable.getIndicatorGroupsJson() : null,
         wideTableId);
+    indicatorGroups = filterActiveIndicatorGroups(indicatorGroups);
     Map<String, IndicatorGroup> indicatorGroupById = buildIndicatorGroupById(indicatorGroups);
     Scope scope = parseScope(wideTable != null ? wideTable.getScopeJson() : null);
     ScheduleFrequency frequency = ScheduleFrequency.parse(normalizeFrequency(scope.frequency));
@@ -459,7 +502,99 @@ public class TaskPlanAppService {
       applySchedulePlan(tg, frequency, rulesByIndicatorGroup);
       records.add(tg);
     }
-    if (records.isEmpty()) return;
+    persistTaskGroupRecords(requirementId, wideTableId, records, indicatorGroups, invalidateMissing);
+  }
+
+  private List<TaskGroup> buildPlanTaskGroupsFromConfig(
+      String requirementId,
+      String wideTableId,
+      List<String> businessDates,
+      List<IndicatorGroup> indicatorGroups,
+      Scope scope,
+      List<ParameterRow> parameterRows,
+      ScheduleFrequency frequency,
+      Map<String, ScheduleRule> rulesByIndicatorGroup,
+      int planVersion) {
+    List<TaskGroup> records = new ArrayList<TaskGroup>();
+    int sortOrder = 0;
+    for (String businessDate : businessDates) {
+      if (businessDate == null || businessDate.trim().isEmpty()) {
+        continue;
+      }
+      String normalizedBusinessDate = frequency.normalizeCompatibleBusinessDate(businessDate);
+      int totalTasks = calculateExpectedTaskCount(scope, parameterRows, normalizedBusinessDate);
+      for (IndicatorGroup indicatorGroup : indicatorGroups) {
+        if (indicatorGroup == null || indicatorGroup.id == null || indicatorGroup.id.trim().isEmpty()) {
+          continue;
+        }
+        TaskGroup tg = new TaskGroup();
+        tg.setId(
+            taskPlanDomainService.buildTaskGroupId(
+                wideTableId, normalizedBusinessDate, indicatorGroup.id, planVersion));
+        tg.setSortOrder(sortOrder++);
+        tg.setRequirementId(requirementId);
+        tg.setWideTableId(wideTableId);
+        tg.setBusinessDate(normalizedBusinessDate);
+        tg.setStatus("pending");
+        tg.setPlanVersion(planVersion);
+        tg.setGroupKind("baseline");
+        tg.setPartitionType("indicator_group");
+        tg.setPartitionKey(indicatorGroup.id);
+        tg.setIndicatorGroupId(indicatorGroup.id);
+        tg.setPartitionLabel(indicatorGroupName(indicatorGroup));
+        tg.setTotalTasks(totalTasks);
+        tg.setPendingTasks(totalTasks);
+        tg.setRunningTasks(0);
+        tg.setCompletedTasks(0);
+        tg.setFailedTasks(0);
+        tg.setCancelledTasks(0);
+        tg.setInvalidatedTasks(0);
+        applySchedulePlan(tg, frequency, rulesByIndicatorGroup);
+        records.add(tg);
+      }
+    }
+    return records;
+  }
+
+  private int calculateExpectedTaskCount(Scope scope, List<ParameterRow> parameterRows, String businessDate) {
+    List<ParameterRow> matched =
+        resolveParameterRowsForTaskGroup(
+            parameterRows,
+            businessDate,
+            scope != null ? scope.frequency : null);
+    if (!matched.isEmpty()) {
+      return matched.size();
+    }
+    return Math.max(1, scope != null ? scope.dimensionCombinationCount : 1);
+  }
+
+  private int resolveCurrentPlanVersion(String requirementId, String wideTableId) {
+    List<TaskGroup> existing = taskGroupRepository.listByRequirementAndWideTable(requirementId, wideTableId);
+    int max = 0;
+    if (existing != null) {
+      for (TaskGroup taskGroup : existing) {
+        if (taskGroup != null && taskGroup.getPlanVersion() != null) {
+          max = Math.max(max, taskGroup.getPlanVersion().intValue());
+        }
+      }
+    }
+    return max > 0 ? max : 1;
+  }
+
+  private String indicatorGroupName(IndicatorGroup indicatorGroup) {
+    if (indicatorGroup == null || indicatorGroup.name == null || indicatorGroup.name.trim().isEmpty()) {
+      return "默认指标组";
+    }
+    return indicatorGroup.name.trim();
+  }
+
+  private void persistTaskGroupRecords(
+      String requirementId,
+      String wideTableId,
+      List<TaskGroup> records,
+      List<IndicatorGroup> indicatorGroups,
+      boolean invalidateMissing) {
+    if (records == null || records.isEmpty()) return;
 
     List<String> ids = new ArrayList<String>(records.size());
     Set<String> idSet = new LinkedHashSet<String>();
@@ -785,6 +920,35 @@ public class TaskPlanAppService {
       out.put(indicatorGroup.id, indicatorGroup);
     }
     return out;
+  }
+
+  private List<IndicatorGroup> filterActiveIndicatorGroups(List<IndicatorGroup> indicatorGroups) {
+    if (indicatorGroups == null || indicatorGroups.isEmpty()) {
+      return Collections.emptyList();
+    }
+    List<IndicatorGroup> active = new ArrayList<IndicatorGroup>();
+    for (IndicatorGroup indicatorGroup : indicatorGroups) {
+      if (indicatorGroup == null || indicatorGroup.id == null || indicatorGroup.id.trim().isEmpty()) {
+        continue;
+      }
+      if (!hasIndicatorColumns(indicatorGroup)) {
+        continue;
+      }
+      active.add(indicatorGroup);
+    }
+    return active;
+  }
+
+  private boolean hasIndicatorColumns(IndicatorGroup indicatorGroup) {
+    if (indicatorGroup == null || indicatorGroup.indicatorColumns == null) {
+      return false;
+    }
+    for (String indicatorColumn : indicatorGroup.indicatorColumns) {
+      if (indicatorColumn != null && !indicatorColumn.trim().isEmpty()) {
+        return true;
+      }
+    }
+    return false;
   }
 
   private void normalizeTaskGroupPartition(

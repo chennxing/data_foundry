@@ -151,7 +151,7 @@ public class RequirementQueryService {
     for (TaskGroup record : records) {
       if (record == null) continue;
       WideTablePlanContext context = contextByWideTableId.get(record.getWideTableId());
-      if (!isCurrentLegalTaskGroup(record, context)) {
+      if (!shouldExposeTaskGroup(record, context)) {
         continue;
       }
       TaskGroupReadDto dto = new TaskGroupReadDto();
@@ -205,7 +205,7 @@ public class RequirementQueryService {
           continue;
         }
         WideTablePlanContext context = contextByWideTableId.get(taskGroup.getWideTableId());
-        if (isCurrentLegalTaskGroup(taskGroup, context)) {
+        if (shouldExposeTaskGroup(taskGroup, context)) {
           legalTaskGroupById.put(taskGroup.getId(), taskGroup);
         }
       }
@@ -220,7 +220,7 @@ public class RequirementQueryService {
         continue;
       }
       WideTablePlanContext context = contextByWideTableId.get(record.getWideTableId());
-      if (!isCurrentLegalFetchTask(record, taskGroup, context)) {
+      if (!shouldExposeFetchTask(record, taskGroup, context)) {
         continue;
       }
       FetchTaskReadDto dto = new FetchTaskReadDto();
@@ -277,56 +277,101 @@ public class RequirementQueryService {
     if (taskGroups == null || taskGroups.isEmpty()) {
       return Collections.emptyMap();
     }
-    Map<String, Integer> currentPlanVersionByWideTableId = new LinkedHashMap<String, Integer>();
+    Map<String, List<TaskGroup>> taskGroupsByWideTableId = new LinkedHashMap<String, List<TaskGroup>>();
     for (TaskGroup taskGroup : taskGroups) {
       if (taskGroup == null || taskGroup.getWideTableId() == null) {
         continue;
       }
-      int planVersion = taskGroup.getPlanVersion() != null ? taskGroup.getPlanVersion().intValue() : 1;
-      Integer current = currentPlanVersionByWideTableId.get(taskGroup.getWideTableId());
-      if (current == null || planVersion > current.intValue()) {
-        currentPlanVersionByWideTableId.put(taskGroup.getWideTableId(), Integer.valueOf(planVersion));
+      String wideTableId = taskGroup.getWideTableId().trim();
+      if (wideTableId.isEmpty()) {
+        continue;
       }
+      if (!taskGroupsByWideTableId.containsKey(wideTableId)) {
+        taskGroupsByWideTableId.put(wideTableId, new ArrayList<TaskGroup>());
+      }
+      taskGroupsByWideTableId.get(wideTableId).add(taskGroup);
     }
-    if (currentPlanVersionByWideTableId.isEmpty()) {
+    if (taskGroupsByWideTableId.isEmpty()) {
       return Collections.emptyMap();
     }
     Map<String, WideTablePlanContext> out = new LinkedHashMap<String, WideTablePlanContext>();
-    for (Map.Entry<String, Integer> entry : currentPlanVersionByWideTableId.entrySet()) {
+    for (Map.Entry<String, List<TaskGroup>> entry : taskGroupsByWideTableId.entrySet()) {
       String wideTableId = entry.getKey();
       if (wideTableId == null || wideTableId.trim().isEmpty()) {
         continue;
       }
       WideTable wideTable = requirementRepository.getWideTableByIdForRequirement(requirementId, wideTableId);
+      String indicatorGroupsJson = wideTable != null ? wideTable.getIndicatorGroupsJson() : null;
       WideTablePlanContext context = new WideTablePlanContext();
-      context.currentPlanVersion = entry.getValue().intValue();
-      context.indicatorGroups = parseIndicatorGroups(wideTable != null ? wideTable.getIndicatorGroupsJson() : null);
+      context.hasIndicatorGroupDefinitions = hasIndicatorGroupDefinitions(indicatorGroupsJson);
+      context.indicatorGroups = parseIndicatorGroups(indicatorGroupsJson);
       context.indicatorGroupKeys = new LinkedHashSet<String>(context.indicatorGroups.keySet());
+      context.currentPlanVersion = resolveCurrentPlanVersion(entry.getValue(), context);
       out.put(wideTableId, context);
     }
     return out;
+  }
+
+  private int resolveCurrentPlanVersion(List<TaskGroup> taskGroups, WideTablePlanContext context) {
+    int max = 0;
+    if (taskGroups != null) {
+      for (TaskGroup taskGroup : taskGroups) {
+        if (!isCurrentPlanVersionCandidate(taskGroup, context)) {
+          continue;
+        }
+        max = Math.max(max, resolvePlanVersion(taskGroup));
+      }
+    }
+    if (max > 0) {
+      return max;
+    }
+    if (taskGroups != null) {
+      for (TaskGroup taskGroup : taskGroups) {
+        if (taskGroup == null || isInvalidatedTaskGroup(taskGroup) || isTrialTaskGroup(taskGroup)) {
+          continue;
+        }
+        max = Math.max(max, resolvePlanVersion(taskGroup));
+      }
+    }
+    return max > 0 ? max : 1;
+  }
+
+  private boolean isCurrentPlanVersionCandidate(TaskGroup taskGroup, WideTablePlanContext context) {
+    if (taskGroup == null || context == null) {
+      return false;
+    }
+    if (isInvalidatedTaskGroup(taskGroup) || isTrialTaskGroup(taskGroup)) {
+      return false;
+    }
+    return isCompatibleWithCurrentIndicatorGroups(taskGroup, context);
   }
 
   private boolean isCurrentLegalTaskGroup(TaskGroup taskGroup, WideTablePlanContext context) {
     if (taskGroup == null || context == null) {
       return false;
     }
-    int planVersion = taskGroup.getPlanVersion() != null ? taskGroup.getPlanVersion().intValue() : 1;
+    int planVersion = resolvePlanVersion(taskGroup);
     if (planVersion != context.currentPlanVersion) {
       return false;
     }
-    String status = taskGroup.getStatus();
-    if (status != null && "invalidated".equalsIgnoreCase(status)) {
+    if (isInvalidatedTaskGroup(taskGroup)) {
+      return false;
+    }
+    return isCompatibleWithCurrentIndicatorGroups(taskGroup, context);
+  }
+
+  private boolean isCompatibleWithCurrentIndicatorGroups(TaskGroup taskGroup, WideTablePlanContext context) {
+    if (taskGroup == null || context == null) {
       return false;
     }
     if (context.indicatorGroupKeys.isEmpty()) {
+      return !context.hasIndicatorGroupDefinitions;
+    }
+    String groupKey = resolveTaskGroupIndicatorGroupKey(taskGroup);
+    if (context.indicatorGroupKeys.size() == 1 && groupKey.isEmpty()) {
       return true;
     }
-    String partitionKey = taskGroup.getPartitionKey();
-    if (context.indicatorGroupKeys.size() == 1 && (partitionKey == null || partitionKey.trim().isEmpty())) {
-      return true;
-    }
-    return partitionKey != null && context.indicatorGroupKeys.contains(partitionKey);
+    return !groupKey.isEmpty() && context.indicatorGroupKeys.contains(groupKey);
   }
 
   private boolean isCurrentLegalFetchTask(
@@ -344,8 +389,8 @@ public class RequirementQueryService {
     if (indicatorGroupId == null || !context.indicatorGroups.containsKey(indicatorGroupId)) {
       return false;
     }
-    String taskGroupPartitionKey = taskGroup.getPartitionKey();
-    if (taskGroupPartitionKey != null && !taskGroupPartitionKey.trim().isEmpty() && !taskGroupPartitionKey.equals(indicatorGroupId)) {
+    String taskGroupPartitionKey = resolveTaskGroupIndicatorGroupKey(taskGroup);
+    if (!taskGroupPartitionKey.isEmpty() && !taskGroupPartitionKey.equals(indicatorGroupId)) {
       return false;
     }
     String fetchTaskBusinessDate = normalizeString(fetchTask.getBusinessDate());
@@ -356,6 +401,33 @@ public class RequirementQueryService {
     Set<String> expectedIndicatorKeys = context.indicatorGroups.get(indicatorGroupId);
     Set<String> actualIndicatorKeys = parseJsonStringSet(fetchTask.getIndicatorKeysJson());
     return expectedIndicatorKeys.equals(actualIndicatorKeys);
+  }
+
+  private boolean shouldExposeTaskGroup(TaskGroup taskGroup, WideTablePlanContext context) {
+    if (taskGroup == null || context == null || isInvalidatedTaskGroup(taskGroup)) {
+      return false;
+    }
+    if (isPreservedRuntimeHistory(taskGroup)) {
+      return true;
+    }
+    return isCurrentLegalTaskGroup(taskGroup, context);
+  }
+
+  private boolean shouldExposeFetchTask(
+      FetchTask fetchTask,
+      TaskGroup taskGroup,
+      WideTablePlanContext context) {
+    if (fetchTask == null || taskGroup == null || context == null) {
+      return false;
+    }
+    String status = normalizeString(fetchTask.getStatus());
+    if ("invalidated".equalsIgnoreCase(status)) {
+      return false;
+    }
+    if (isPreservedRuntimeHistory(taskGroup)) {
+      return true;
+    }
+    return isCurrentLegalFetchTask(fetchTask, taskGroup, context);
   }
 
   private Map<String, Set<String>> parseIndicatorGroups(String indicatorGroupsJson) {
@@ -381,11 +453,36 @@ public class RequirementQueryService {
         if (!(indicatorColumns instanceof List)) {
           indicatorColumns = raw.get("indicator_keys");
         }
-        out.put(id, normalizeStringSet((List<?>) indicatorColumns));
+        Set<String> normalizedIndicatorColumns = normalizeStringSet((List<?>) indicatorColumns);
+        if (normalizedIndicatorColumns.isEmpty()) {
+          continue;
+        }
+        out.put(id, normalizedIndicatorColumns);
       }
       return out;
     } catch (Exception ex) {
       return Collections.emptyMap();
+    }
+  }
+
+  private boolean hasIndicatorGroupDefinitions(String indicatorGroupsJson) {
+    if (indicatorGroupsJson == null || indicatorGroupsJson.trim().isEmpty()) {
+      return false;
+    }
+    try {
+      List<?> rawGroups = objectMapper.readValue(indicatorGroupsJson, new TypeReference<List<?>>() {});
+      for (Object rawGroup : rawGroups) {
+        if (!(rawGroup instanceof Map)) {
+          continue;
+        }
+        Map<?, ?> raw = (Map<?, ?>) rawGroup;
+        if (!normalizeString(raw.get("id")).isEmpty()) {
+          return true;
+        }
+      }
+      return false;
+    } catch (Exception ex) {
+      return false;
     }
   }
 
@@ -463,10 +560,43 @@ public class RequirementQueryService {
     return String.valueOf(rawValue).trim();
   }
 
+  private int resolvePlanVersion(TaskGroup taskGroup) {
+    return taskGroup != null && taskGroup.getPlanVersion() != null
+        ? taskGroup.getPlanVersion().intValue()
+        : 1;
+  }
+
+  private boolean isInvalidatedTaskGroup(TaskGroup taskGroup) {
+    String status = taskGroup != null ? taskGroup.getStatus() : null;
+    return status != null && "invalidated".equalsIgnoreCase(status.trim());
+  }
+
+  private boolean isTrialTaskGroup(TaskGroup taskGroup) {
+    String triggeredBy = taskGroup != null ? taskGroup.getTriggeredBy() : null;
+    return triggeredBy != null && "trial".equalsIgnoreCase(triggeredBy.trim());
+  }
+
+  private boolean isPreservedRuntimeHistory(TaskGroup taskGroup) {
+    String status = normalizeString(taskGroup != null ? taskGroup.getStatus() : null).toLowerCase();
+    return !status.isEmpty() && !"pending".equals(status) && !"invalidated".equals(status);
+  }
+
+  private String resolveTaskGroupIndicatorGroupKey(TaskGroup taskGroup) {
+    if (taskGroup == null) {
+      return "";
+    }
+    String partitionKey = normalizeString(taskGroup.getPartitionKey());
+    if (!partitionKey.isEmpty()) {
+      return partitionKey;
+    }
+    return normalizeString(taskGroup.getIndicatorGroupId());
+  }
+
   private static final class WideTablePlanContext {
     private int currentPlanVersion;
     private Map<String, Set<String>> indicatorGroups = Collections.emptyMap();
     private Set<String> indicatorGroupKeys = Collections.emptySet();
+    private boolean hasIndicatorGroupDefinitions;
   }
 
   public FetchTaskResultsReadDto getTaskResults(String taskId) {

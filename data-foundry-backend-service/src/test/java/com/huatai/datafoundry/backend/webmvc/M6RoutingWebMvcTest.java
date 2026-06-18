@@ -25,11 +25,14 @@ import com.huatai.datafoundry.backend.requirement.interfaces.web.legacy.Requirem
 import com.huatai.datafoundry.backend.requirement.interfaces.web.legacy.RequirementTaskLegacyController;
 import com.huatai.datafoundry.backend.requirement.interfaces.web.legacy.RequirementWideTableLegacyController;
 import com.huatai.datafoundry.backend.requirement.interfaces.web.legacy.WideTablePlanLegacyController;
+import com.huatai.datafoundry.backend.account.interfaces.web.AccountAuthSupport;
+import com.huatai.datafoundry.backend.account.infrastructure.persistence.mybatis.record.AccountRecord;
 import com.huatai.datafoundry.backend.project.application.query.dto.ProjectReadDto;
 import com.huatai.datafoundry.backend.project.application.query.service.ProjectQueryService;
 import com.huatai.datafoundry.backend.project.application.service.ProjectAppService;
 import com.huatai.datafoundry.backend.project.interfaces.web.ProjectFacadeController;
 import com.huatai.datafoundry.backend.ops.application.service.DemoDataService;
+import com.huatai.datafoundry.backend.ops.application.query.service.OpsMonitoringQueryService;
 import com.huatai.datafoundry.backend.task.application.service.ScheduleJobFacadeAppService;
 import com.huatai.datafoundry.backend.task.application.service.TaskAppService;
 import com.huatai.datafoundry.backend.task.application.service.TaskRuntimeBackfillAppService;
@@ -50,6 +53,7 @@ import org.springframework.http.MediaType;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 import com.huatai.datafoundry.backend.ops.interfaces.web.PlatformStubController;
+import javax.servlet.http.HttpServletRequest;
 
 @WebMvcTest(
     controllers = {
@@ -75,8 +79,17 @@ public class M6RoutingWebMvcTest {
   @MockBean private ScheduleJobFacadeAppService scheduleJobFacadeAppService;
   @MockBean private ProjectQueryService projectQueryService;
   @MockBean private ProjectAppService projectAppService;
+  @MockBean private AccountAuthSupport accountAuthSupport;
   @MockBean private DemoDataService demoDataService;
+  @MockBean private OpsMonitoringQueryService opsMonitoringQueryService;
   @MockBean private TaskRuntimeBackfillAppService taskRuntimeBackfillAppService;
+
+  private AccountRecord currentUser() {
+    AccountRecord user = new AccountRecord();
+    user.setAccount("tester");
+    user.setDisplayName("Tester");
+    return user;
+  }
 
   @Test
   void legacyAndCanonicalRequirementListReturnWideTableSnakeCase() throws Exception {
@@ -109,6 +122,7 @@ public class M6RoutingWebMvcTest {
     doNothing()
         .when(requirementAppService)
         .createRequirement(anyString(), anyString(), anyString(), any(RequirementCreateCommand.class));
+    when(accountAuthSupport.requireCurrentUser(any(HttpServletRequest.class))).thenReturn(currentUser());
     when(requirementQueryService.getByProjectAndId(eq("P1"), anyString()))
         .thenAnswer(
             inv -> {
@@ -166,11 +180,11 @@ public class M6RoutingWebMvcTest {
     FetchTaskReadDto ft = new FetchTaskReadDto();
     ft.setId("FT1");
     when(requirementQueryService.listTaskGroups("P1", "R1")).thenReturn(Collections.singletonList(tg));
-    when(requirementQueryService.listFetchTasks("P1", "R1")).thenReturn(Collections.singletonList(ft));
+    when(requirementQueryService.listFetchTasks("P1", "R1", true)).thenReturn(Collections.singletonList(ft));
     RequirementTaskRuntimeReadDto runtime = new RequirementTaskRuntimeReadDto();
     runtime.setTaskGroups(Collections.singletonList(tg));
     runtime.setFetchTasks(Collections.singletonList(ft));
-    when(requirementQueryService.getTaskRuntime("P1", "R1")).thenReturn(runtime);
+    when(requirementQueryService.getTaskRuntime("P1", "R1", true)).thenReturn(runtime);
 
     Map<String, Object> ok = new HashMap<String, Object>();
     ok.put("ok", true);

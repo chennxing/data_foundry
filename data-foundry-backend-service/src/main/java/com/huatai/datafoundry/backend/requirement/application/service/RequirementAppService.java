@@ -7,6 +7,8 @@ import com.huatai.datafoundry.backend.requirement.application.command.Requiremen
 import com.huatai.datafoundry.backend.requirement.application.command.RequirementUpdateCommand;
 import com.huatai.datafoundry.backend.requirement.application.command.WideTableCreateCommand;
 import com.huatai.datafoundry.backend.requirement.application.command.WideTableUpdateCommand;
+import com.huatai.datafoundry.backend.requirement.application.query.dto.RequirementTaskRuntimeReadDto;
+import com.huatai.datafoundry.backend.requirement.application.query.service.RequirementQueryService;
 import com.huatai.datafoundry.backend.requirement.domain.model.Requirement;
 import com.huatai.datafoundry.backend.requirement.domain.model.WideTable;
 import com.huatai.datafoundry.backend.requirement.domain.repository.RequirementRepository;
@@ -39,6 +41,7 @@ public class RequirementAppService {
   private final ObjectMapper objectMapper;
   private final TaskPlanAppService taskPlanAppService;
   private final SchedulePlanRefreshAppService schedulePlanRefreshAppService;
+  private final RequirementQueryService requirementQueryService;
 
   public RequirementAppService(
       AccountAppService accountAppService,
@@ -47,7 +50,8 @@ public class RequirementAppService {
       WideTableRowMapper wideTableRowMapper,
       ObjectMapper objectMapper,
       TaskPlanAppService taskPlanAppService,
-      SchedulePlanRefreshAppService schedulePlanRefreshAppService) {
+      SchedulePlanRefreshAppService schedulePlanRefreshAppService,
+      RequirementQueryService requirementQueryService) {
     this.accountAppService = accountAppService;
     this.requirementRepository = requirementRepository;
     this.wideTableScopeImportMapper = wideTableScopeImportMapper;
@@ -55,6 +59,7 @@ public class RequirementAppService {
     this.objectMapper = objectMapper;
     this.taskPlanAppService = taskPlanAppService;
     this.schedulePlanRefreshAppService = schedulePlanRefreshAppService;
+    this.requirementQueryService = requirementQueryService;
   }
 
   @Transactional
@@ -454,9 +459,11 @@ public class RequirementAppService {
       String requirementId, String wideTableId, Map<String, Object> body) {
     assertWideTableExists(requirementId, wideTableId);
     boolean invalidateMissing = false;
+    boolean rebuildTaskGroups = false;
     if (body != null) {
       Object flag = body.get("invalidate_missing");
       invalidateMissing = isTruthy(flag);
+      rebuildTaskGroups = isTruthy(body.get("rebuild_task_groups"));
     }
     if (body != null) {
       Object scope = body.get("scope");
@@ -483,15 +490,22 @@ public class RequirementAppService {
         taskPlanAppService.syncIndicatorGroupLabels(requirementId, wideTableId);
       }
 
-      Object taskGroupsObj = body.get("task_groups");
-      if (taskGroupsObj instanceof List) {
-        @SuppressWarnings("unchecked")
-        List<Map<String, Object>> taskGroups = (List<Map<String, Object>>) taskGroupsObj;
-        taskPlanAppService.persistPlanTaskGroups(requirementId, wideTableId, taskGroups, invalidateMissing);
+      if (rebuildTaskGroups) {
+        taskPlanAppService.syncPlanTaskGroupsFromWideTableConfig(
+            requirementId, wideTableId, invalidateMissing);
       }
     }
+    Requirement requirement = requirementRepository.getById(requirementId);
+    RequirementTaskRuntimeReadDto runtime =
+        requirementQueryService.getTaskRuntime(
+            requirement.getProjectId(), requirementId, false);
     Map<String, Object> out = new HashMap<String, Object>();
     out.put("ok", true);
+    out.put("task_groups_synced", Boolean.valueOf(rebuildTaskGroups));
+    out.put("task_groups", runtime.getTaskGroups());
+    out.put("fetch_tasks", runtime.getFetchTasks());
+    out.put("task_group_count", Integer.valueOf(runtime.getTaskGroups().size()));
+    out.put("fetch_task_count", Integer.valueOf(runtime.getFetchTasks().size()));
     return out;
   }
 

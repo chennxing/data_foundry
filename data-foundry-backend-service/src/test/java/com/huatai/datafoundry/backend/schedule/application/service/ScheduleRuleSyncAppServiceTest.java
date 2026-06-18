@@ -27,7 +27,8 @@ class ScheduleRuleSyncAppServiceTest {
     wideTable.setId("wt-1");
     wideTable.setRequirementId("req-1");
     wideTable.setIndicatorGroupsJson(
-        "[{\"id\":\"ig-1\",\"name\":\"A\"},{\"id\":\"ig-2\",\"name\":\"B\"}]");
+        "[{\"id\":\"ig-1\",\"name\":\"A\",\"indicator_columns\":[\"metric_a\"]},"
+            + "{\"id\":\"ig-2\",\"name\":\"B\",\"indicator_columns\":[\"metric_b\"]}]");
     wideTable.setScheduleRulesJson(
         "[{\"frequency\":\"MONTHLY\",\"trigger_time\":\"08:30\","
             + "\"business_date_offset_days\":3,\"enabled\":true}]");
@@ -53,5 +54,34 @@ class ScheduleRuleSyncAppServiceTest {
     assertEquals(2, captor.getAllValues().get(0).size());
     verify(repository, Mockito.times(2))
         .disableMissingIndicatorGroups(any(), any(), any());
+  }
+
+  @Test
+  void ignoresIndicatorGroupsWithoutIndicatorColumnsAndDisablesTheirRules() {
+    ScheduleRuleRepository repository = Mockito.mock(ScheduleRuleRepository.class);
+    ScheduleRuleSyncAppService service =
+        new ScheduleRuleSyncAppService(repository, new ObjectMapper());
+    WideTablePlanSource wideTable = new WideTablePlanSource();
+    wideTable.setId("wt-1");
+    wideTable.setRequirementId("req-1");
+    wideTable.setIndicatorGroupsJson(
+        "[{\"id\":\"ig-active\",\"name\":\"Active\",\"indicator_columns\":[\"metric_a\"]},"
+            + "{\"id\":\"ig-empty\",\"name\":\"Empty\",\"indicator_columns\":[]}]");
+    wideTable.setScheduleRulesJson(
+        "[{\"frequency\":\"MONTHLY\",\"trigger_time\":\"08:30\"," 
+            + "\"business_date_offset_days\":3,\"enabled\":true}]");
+
+    Map<String, ScheduleRule> rules = service.sync(wideTable);
+
+    assertEquals(1, rules.size());
+    assertTrue(rules.containsKey("ig-active"));
+    @SuppressWarnings("unchecked")
+    ArgumentCaptor<List<ScheduleRule>> captor =
+        ArgumentCaptor.forClass((Class) List.class);
+    verify(repository).upsertBatch(captor.capture());
+    assertEquals(1, captor.getValue().size());
+    assertEquals("ig-active", captor.getValue().get(0).getIndicatorGroupId());
+    verify(repository).disableMissingIndicatorGroups(
+        Mockito.eq("req-1"), Mockito.eq("wt-1"), Mockito.eq(rules.keySet()));
   }
 }

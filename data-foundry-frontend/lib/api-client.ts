@@ -1883,12 +1883,22 @@ export async function updateRequirementWideTable(
   return mapWideTable(raw, requirementId);
 }
 
+export type TaskPlanSyncResponse = {
+  ok: boolean;
+  taskGroupsSynced: boolean;
+  taskGroups: TaskGroup[];
+  fetchTasks: FetchTask[];
+  taskGroupCount: number;
+  fetchTaskCount: number;
+};
+
 export async function persistWideTablePlan(
   requirementId: string,
   wideTable: WideTable,
   records: WideTableRecord[],
   taskGroups: TaskGroup[],
-): Promise<void> {
+  options: { rebuildTaskGroups?: boolean } = {},
+): Promise<TaskPlanSyncResponse> {
   const normalizedWideTable = normalizeWideTableMode(wideTable);
   const planVersion = Math.max(
     normalizedWideTable.currentPlanVersion ?? 0,
@@ -1896,10 +1906,11 @@ export async function persistWideTablePlan(
     ...taskGroups.map((taskGroup) => taskGroup.planVersion ?? 0),
   );
 
-  await apiPost(`/api/requirements/${requirementId}/wide-tables/${normalizedWideTable.id}/plan`, {
+  const raw = await apiPost<any>(`/api/requirements/${requirementId}/wide-tables/${normalizedWideTable.id}/plan`, {
     schema: toBackendWideTableSchema(normalizedWideTable),
     scope: toBackendWideTableScope(normalizedWideTable),
     invalidate_missing: true,
+    rebuild_task_groups: options.rebuildTaskGroups === true,
     indicator_groups: normalizedWideTable.indicatorGroups.map((group) => ({
       id: group.id,
       name: group.name,
@@ -1917,12 +1928,20 @@ export async function persistWideTablePlan(
     })),
     schedule_rules: toBackendScheduleRules(normalizedWideTable),
     rows: toBackendWideTablePlanRows(normalizedWideTable, records, planVersion),
-    task_groups: toBackendWideTablePlanTaskGroups(normalizedWideTable.id, taskGroups, planVersion),
     semantic_time_axis: resolveWideTableSemanticTimeAxis(normalizedWideTable),
     collection_coverage_mode: resolveWideTableCollectionCoverageMode(normalizedWideTable),
     status: normalizedWideTable.status,
     record_count: normalizedWideTable.recordCount,
   });
+
+  return {
+    ok: raw.ok === true,
+    taskGroupsSynced: raw.task_groups_synced ?? raw.taskGroupsSynced ?? false,
+    taskGroups: (raw.task_groups ?? raw.taskGroups ?? []).map(mapTaskGroup),
+    fetchTasks: (raw.fetch_tasks ?? raw.fetchTasks ?? []).map((item: any) => mapFetchTask(item.task ?? item)),
+    taskGroupCount: Number(raw.task_group_count ?? raw.taskGroupCount ?? 0),
+    fetchTaskCount: Number(raw.fetch_task_count ?? raw.fetchTaskCount ?? 0),
+  };
 }
 
 export async function persistWideTablePreview(
@@ -2128,6 +2147,44 @@ export async function fetchRequirementTaskRuntime(
     taskGroups: (raw.task_groups ?? raw.taskGroups ?? []).map(mapTaskGroup),
     fetchTasks: (raw.fetch_tasks ?? raw.fetchTasks ?? []).map((item: any) => mapFetchTask(item.task ?? item)),
   };
+}
+
+function formatRuntimeLoadError(error: unknown): string {
+  if (error instanceof Error) {
+    const message = error.message.trim();
+    if (message !== "") {
+      return message;
+    }
+  }
+  return String(error ?? "unknown error");
+}
+
+async function fetchRequirementTaskRuntimeWithFallback(
+  projectId: string,
+  requirementId: string,
+  options: {
+    includeCollectionRows?: boolean;
+  } = {},
+): Promise<{
+  taskGroups: TaskGroup[];
+  fetchTasks: FetchTask[];
+}> {
+  try {
+    return await fetchRequirementTaskRuntime(projectId, requirementId, options);
+  } catch (runtimeError) {
+    try {
+      const [taskGroups, fetchTasks] = await Promise.all([
+        fetchTaskGroups(projectId, requirementId),
+        fetchFetchTasks(projectId, requirementId, options),
+      ]);
+      return { taskGroups, fetchTasks };
+    } catch (fallbackError) {
+      throw new Error(
+        `加载任务运行态失败：/task-runtime=${formatRuntimeLoadError(runtimeError)}；`
+        + `/task-groups+/tasks=${formatRuntimeLoadError(fallbackError)}`,
+      );
+    }
+  }
 }
 
 export async function fetchTaskResults(taskId: string): Promise<FetchTaskResults> {
@@ -2718,12 +2775,9 @@ export async function loadRequirementOperationalData(
   acceptanceTickets: AcceptanceTicket[];
   scheduleJobs: ScheduleJob[];
 }> {
-  const runtimeData = await fetchRequirementTaskRuntime(projectId, requirementId, {
+  const runtimeData = await fetchRequirementTaskRuntimeWithFallback(projectId, requirementId, {
     includeCollectionRows: false,
-  }).catch(() => ({
-    taskGroups: [] as TaskGroup[],
-    fetchTasks: [] as FetchTask[],
-  }));
+  });
   const taskGroupIds = runtimeData.taskGroups.map((taskGroup) => taskGroup.id);
   const [acceptanceTickets, scheduleJobs, wideTableRecordsArrays] = await Promise.all([
     fetchAcceptanceTickets({ requirementId }).catch(() => [] as AcceptanceTicket[]),

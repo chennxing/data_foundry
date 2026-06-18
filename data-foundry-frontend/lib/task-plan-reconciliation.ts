@@ -33,6 +33,95 @@ export type TaskPlanReconcileResult = {
   invalidatedTaskGroupCount: number;
 };
 
+type IndicatorTaskSignatureEntry = {
+  id: string;
+  name: string;
+  indicatorColumns: string[];
+};
+
+export function buildIndicatorTaskSignature(
+  indicatorGroups: WideTable["indicatorGroups"],
+): string {
+  const entries = indicatorGroups
+    .map((group) => ({
+      id: String(group.id ?? "").trim(),
+      name: String(group.name ?? "").trim(),
+      indicatorColumns: normalizeSignatureValues(group.indicatorColumns),
+    }))
+    .filter((group) => group.id !== "" && group.indicatorColumns.length > 0)
+    .sort((left, right) => left.id.localeCompare(right.id));
+  return JSON.stringify(entries);
+}
+
+export function buildRuntimeIndicatorTaskSignature(params: {
+  wideTableId: string;
+  taskGroups: TaskGroup[];
+  fetchTasks: FetchTask[];
+}): string {
+  const validTaskGroups = params.taskGroups.filter(
+    (taskGroup) =>
+      taskGroup.wideTableId === params.wideTableId
+      && taskGroup.status !== "invalidated"
+      && taskGroup.triggeredBy !== "trial",
+  );
+  if (validTaskGroups.length === 0) {
+    return "";
+  }
+  const currentPlanVersion = Math.max(
+    1,
+    ...validTaskGroups.map((taskGroup) => resolveTaskGroupPlanVersion(taskGroup, 1)),
+  );
+  const currentTaskGroups = validTaskGroups.filter(
+    (taskGroup) => resolveTaskGroupPlanVersion(taskGroup, currentPlanVersion) === currentPlanVersion,
+  );
+  const currentTaskGroupIds = new Set(currentTaskGroups.map((taskGroup) => taskGroup.id));
+  const runtimeFetchTasks = params.fetchTasks.filter(
+    (task) => task.wideTableId === params.wideTableId && currentTaskGroupIds.has(task.taskGroupId),
+  );
+  const entryById = new Map<string, IndicatorTaskSignatureEntry>();
+
+  for (const taskGroup of currentTaskGroups) {
+    const groupedTasks = runtimeFetchTasks.filter((task) => task.taskGroupId === taskGroup.id);
+    const fallbackTask = groupedTasks[0];
+    const groupId = String(
+      taskGroup.partitionKey
+      ?? taskGroup.indicatorGroupId
+      ?? fallbackTask?.indicatorGroupId
+      ?? "",
+    ).trim();
+    if (!groupId) {
+      continue;
+    }
+    const existing = entryById.get(groupId);
+    const indicatorColumns = normalizeSignatureValues([
+      ...(existing?.indicatorColumns ?? []),
+      ...groupedTasks.flatMap((task) => task.indicatorKeys ?? []),
+    ]);
+    entryById.set(groupId, {
+      id: groupId,
+      name: String(
+        taskGroup.partitionLabel
+        ?? fallbackTask?.indicatorGroupName
+        ?? existing?.name
+        ?? "",
+      ).trim(),
+      indicatorColumns,
+    });
+  }
+
+  return JSON.stringify(
+    Array.from(entryById.values())
+      .filter((entry) => entry.indicatorColumns.length > 0)
+      .sort((left, right) => left.id.localeCompare(right.id)),
+  );
+}
+
+function normalizeSignatureValues(values: string[]): string[] {
+  return Array.from(
+    new Set(values.map((value) => String(value ?? "").trim()).filter(Boolean)),
+  ).sort((left, right) => left.localeCompare(right));
+}
+
 export function countExpectedFetchTasksForBusinessDate(
   wideTable: Pick<WideTable, "parameterRows" | "businessDateRange">,
   businessDate: string,
@@ -180,9 +269,13 @@ export function resolveCurrentPlanVersion(
   }
 
   const scopedTaskGroups = taskGroups.filter((taskGroup) => taskGroup.wideTableId === wideTable.id);
+  const currentScopedTaskGroups = scopedTaskGroups.filter(
+    (taskGroup) => taskGroup.status !== "invalidated" && taskGroup.triggeredBy !== "trial",
+  );
+  const versionTaskGroups = currentScopedTaskGroups.length > 0 ? currentScopedTaskGroups : scopedTaskGroups;
   const derivedVersion = Math.max(
     0,
-    ...scopedTaskGroups.map((taskGroup) => resolveTaskGroupPlanVersion(taskGroup, 0)),
+    ...versionTaskGroups.map((taskGroup) => resolveTaskGroupPlanVersion(taskGroup, 0)),
     ...records.map((record) => resolveRecordPlanVersion(record, 0)),
   );
 

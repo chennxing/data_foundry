@@ -31,7 +31,7 @@ public class ScheduleRuleSyncAppService {
     if (wideTable == null) {
       return Collections.emptyMap();
     }
-    List<Map<String, Object>> groups = readList(wideTable.getIndicatorGroupsJson());
+    List<Map<String, Object>> groups = activeIndicatorGroups(readList(wideTable.getIndicatorGroupsJson()));
     List<Map<String, Object>> configuredRules = readList(wideTable.getScheduleRulesJson());
     if (groups.isEmpty() || configuredRules.isEmpty()) {
       repository.disableByWideTable(wideTable.getRequirementId(), wideTable.getId());
@@ -108,6 +108,42 @@ public class ScheduleRuleSyncAppService {
     } catch (Exception ex) {
       throw new IllegalArgumentException("Invalid schedule rule configuration", ex);
     }
+  }
+
+  private static List<Map<String, Object>> activeIndicatorGroups(List<Map<String, Object>> groups) {
+    if (groups == null || groups.isEmpty()) {
+      return Collections.emptyList();
+    }
+    List<Map<String, Object>> active = new ArrayList<Map<String, Object>>();
+    for (Map<String, Object> group : groups) {
+      if (group == null || firstNonBlank(text(group.get("id"))) == null) {
+        continue;
+      }
+      if (!hasIndicatorColumns(group)) {
+        continue;
+      }
+      active.add(group);
+    }
+    return active;
+  }
+
+  private static boolean hasIndicatorColumns(Map<String, Object> group) {
+    Object columns = group.get("indicator_columns");
+    if (!(columns instanceof List)) {
+      columns = group.get("indicatorColumns");
+    }
+    if (!(columns instanceof List)) {
+      columns = group.get("indicator_keys");
+    }
+    if (!(columns instanceof List)) {
+      return false;
+    }
+    for (Object column : (List<?>) columns) {
+      if (firstNonBlank(text(column)) != null) {
+        return true;
+      }
+    }
+    return false;
   }
 
   private static String stableRuleId(

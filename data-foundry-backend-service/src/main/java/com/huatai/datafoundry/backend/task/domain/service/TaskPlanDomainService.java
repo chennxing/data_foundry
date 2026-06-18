@@ -30,6 +30,9 @@ public class TaskPlanDomainService {
     if (indicatorGroup == null || indicatorGroup.id == null || indicatorGroup.id.trim().isEmpty()) {
       return Collections.emptyList();
     }
+    if (!hasIndicatorColumns(indicatorGroup)) {
+      return Collections.emptyList();
+    }
 
     List<ParameterRow> parameterRows = input.parameterRows != null ? input.parameterRows : Collections.<ParameterRow>emptyList();
     boolean useParameterRows = !parameterRows.isEmpty();
@@ -206,6 +209,18 @@ public class TaskPlanDomainService {
       return null;
     }
     return groups.get(0);
+  }
+
+  private static boolean hasIndicatorColumns(IndicatorGroup indicatorGroup) {
+    if (indicatorGroup == null || indicatorGroup.indicatorColumns == null) {
+      return false;
+    }
+    for (String indicatorColumn : indicatorGroup.indicatorColumns) {
+      if (indicatorColumn != null && !indicatorColumn.trim().isEmpty()) {
+        return true;
+      }
+    }
+    return false;
   }
 
   private static List<String> iteratePeriods(

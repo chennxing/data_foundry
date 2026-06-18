@@ -8,6 +8,8 @@ import {
 } from "@/lib/api-client";
 import {
   annotateCurrentPlanRecords,
+  buildIndicatorTaskSignature,
+  buildRuntimeIndicatorTaskSignature,
   buildTaskPlanFingerprint,
   reconcileTaskPlanChange,
   resolveCurrentPlanVersion,
@@ -41,6 +43,7 @@ type Props = {
   onReplaceWideTableRecords?: (wideTableId: string, nextWideTableRecords: WideTableRecord[]) => void;
   onTaskGroupsChange: (nextTaskGroups: TaskGroup[]) => void;
   onFetchTasksChange: (nextFetchTasks: FetchTask[]) => void;
+  onTaskRuntimeChange?: (nextTaskGroups: TaskGroup[], nextFetchTasks: FetchTask[]) => void;
   onRequirementChange?: (requirement: Requirement) => void;
   onRefreshData?: () => Promise<void>;
   buildWideTableWithPromptDrafts: (wideTable: WideTable, editedAt: string) => WideTable;
@@ -61,6 +64,7 @@ export default function useIndicatorGroups({
   onReplaceWideTableRecords,
   onTaskGroupsChange,
   onFetchTasksChange,
+  onTaskRuntimeChange,
   onRequirementChange,
   onRefreshData,
   buildWideTableWithPromptDrafts,
@@ -261,6 +265,27 @@ export default function useIndicatorGroups({
         return;
       }
 
+      const persistedTaskGroups = taskGroups.filter(
+        (taskGroup) =>
+          taskGroup.wideTableId === selectedWt.id
+          && taskGroup.status !== "invalidated"
+          && taskGroup.triggeredBy !== "trial",
+      );
+      const desiredTaskSignature = buildIndicatorTaskSignature(nextWideTable.indicatorGroups);
+      const runtimeTaskSignature = buildRuntimeIndicatorTaskSignature({
+        wideTableId: selectedWt.id,
+        taskGroups,
+        fetchTasks,
+      });
+      const shouldSyncTaskGroups =
+        persistedTaskGroups.length === 0 || desiredTaskSignature !== runtimeTaskSignature;
+
+      if (!shouldSyncTaskGroups) {
+        updateSelectedWideTable(() => nextWideTable);
+        setIndicatorGroupMessage("指标分组未变化，无需重建任务组。");
+        return;
+      }
+
       const ensuredPreview = await ensurePreviewRows(nextWideTable, now);
       const previewWideTable = ensuredPreview.wideTable;
       const previewRecords = ensuredPreview.records;
@@ -291,16 +316,40 @@ export default function useIndicatorGroups({
         updatedAt: now,
       };
 
-      if (reconciliation.structuralChange) {
-        await persistWideTablePlan(
-          requirement.id,
-          persistedWideTable,
-          annotatedRecords,
-          reconciliation.taskGroups.filter((taskGroup) => taskGroup.wideTableId === selectedWt.id),
-        );
-        onTaskGroupsChange(reconciliation.taskGroups);
-        onFetchTasksChange(reconciliation.fetchTasks);
-        onReplaceWideTableRecords?.(selectedWt.id, annotatedRecords);
+      const syncResult = await persistWideTablePlan(
+        requirement.id,
+        persistedWideTable,
+        annotatedRecords,
+        reconciliation.taskGroups.filter((taskGroup) => taskGroup.wideTableId === selectedWt.id),
+        { rebuildTaskGroups: true },
+      );
+      if (syncResult.taskGroups.length === 0) {
+        throw new Error("后端未返回生成后的任务组，请检查任务运行态接口。");
+      }
+      if (onTaskRuntimeChange) {
+        onTaskRuntimeChange(syncResult.taskGroups, syncResult.fetchTasks);
+      } else {
+        onTaskGroupsChange(syncResult.taskGroups);
+        onFetchTasksChange(syncResult.fetchTasks);
+      }
+      onReplaceWideTableRecords?.(selectedWt.id, annotatedRecords);
+      const syncedPlanVersion = Math.max(
+        nextPlanVersion,
+        ...syncResult.taskGroups
+          .filter((taskGroup) => taskGroup.wideTableId === selectedWt.id)
+          .map((taskGroup) => taskGroup.planVersion ?? 1),
+      );
+      updateSelectedWideTable(() => ({
+        ...persistedWideTable,
+        currentPlanVersion: syncedPlanVersion,
+      }));
+      setIndicatorGroupMessage(
+        persistedTaskGroups.length === 0
+          ? `已生成 ${syncResult.taskGroupCount} 个任务组及 ${syncResult.fetchTaskCount} 个采集任务。`
+          : `已重建 ${syncResult.taskGroupCount} 个任务组及 ${syncResult.fetchTaskCount} 个采集任务。`,
+      );
+      /* Legacy local-plan messaging is intentionally disabled. The backend
+       * response above is now the authoritative task runtime snapshot.
         setIndicatorGroupMessage(
           usesBusinessDateAxis
             ? `已保存指标分组，并生成 ${reconciliation.generatedTaskGroupCount} 个任务组及对应采集任务。`
@@ -315,8 +364,8 @@ export default function useIndicatorGroups({
         setIndicatorGroupMessage("已保存指标分组配置，当前任务计划无需重建。");
       }
 
-      updateSelectedWideTable(() => persistedWideTable);
-      if (reconciliation.structuralChange && requirement.status !== "running") {
+      */
+      if (requirement.status !== "running") {
         onRequirementChange?.({
           ...requirement,
           status: "running",
@@ -324,7 +373,11 @@ export default function useIndicatorGroups({
           updatedAt: now,
         });
       }
-      await onRefreshData?.();
+      try {
+        await onRefreshData?.();
+      } catch {
+        // The command response already contains the committed runtime state.
+      }
     } catch (error) {
       setIndicatorGroupMessage(`保存失败：${formatTaskActionError(error)}`);
     } finally {
