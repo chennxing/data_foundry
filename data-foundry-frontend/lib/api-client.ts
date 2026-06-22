@@ -42,6 +42,7 @@ import type {
   DataLineage,
   RuntimeSettings,
   ScheduleJob,
+  ScheduleTriggerLog,
 } from "./domain";
 import {
   DEFAULT_INDICATOR_GROUP_NAME,
@@ -1070,6 +1071,25 @@ function mapScheduleJob(raw: any): ScheduleJob {
   };
 }
 
+function mapScheduleTriggerLog(raw: any): ScheduleTriggerLog {
+  return {
+    id: raw.id,
+    scheduleJobId: raw.schedule_job_id ?? undefined,
+    scheduleRuleId: raw.schedule_rule_id ?? undefined,
+    taskGroupId: raw.task_group_id ?? undefined,
+    triggerType: raw.trigger_type,
+    triggerSource: raw.trigger_source,
+    businessDate: raw.business_date ?? undefined,
+    triggerParamJson: raw.trigger_param_json ?? undefined,
+    triggerStatus: raw.trigger_status,
+    skipReason: raw.skip_reason ?? undefined,
+    errorMessage: raw.error_message ?? undefined,
+    startedAt: raw.started_at ?? undefined,
+    endedAt: raw.ended_at ?? undefined,
+    createdAt: raw.created_at ?? undefined,
+  };
+}
+
 function mapRuntimeSettings(raw: any): RuntimeSettings {
   return normalizeRuntimeSettings(raw);
 }
@@ -1121,6 +1141,16 @@ export async function createScheduleJob(data: {
   if (!res.ok) return null;
   const raw = await res.json();
   return mapScheduleJob(raw);
+}
+
+export async function fetchScheduleTriggerLogs(scheduleJobId: string): Promise<ScheduleTriggerLog[]> {
+  const params = new URLSearchParams();
+  params.set("schedule_job_id", scheduleJobId);
+  const url = buildApiUrl(`/api/schedule-trigger-logs?${params.toString()}`);
+  const res = await fetch(url);
+  if (!res.ok) return [];
+  const data = await res.json();
+  return (data as any[]).map(mapScheduleTriggerLog);
 }
 
 export async function fetchRuntimeSettings(): Promise<RuntimeSettings> {

@@ -31,6 +31,9 @@ import com.huatai.datafoundry.backend.project.application.query.dto.ProjectReadD
 import com.huatai.datafoundry.backend.project.application.query.service.ProjectQueryService;
 import com.huatai.datafoundry.backend.project.application.service.ProjectAppService;
 import com.huatai.datafoundry.backend.project.interfaces.web.ProjectFacadeController;
+import com.huatai.datafoundry.backend.schedule.application.query.service.ScheduleTriggerLogQueryService;
+import com.huatai.datafoundry.backend.schedule.domain.model.ScheduleTriggerLog;
+import com.huatai.datafoundry.backend.schedule.interfaces.web.ScheduleTriggerLogController;
 import com.huatai.datafoundry.backend.ops.application.service.DemoDataService;
 import com.huatai.datafoundry.backend.ops.application.query.service.OpsMonitoringQueryService;
 import com.huatai.datafoundry.backend.task.application.service.ScheduleJobFacadeAppService;
@@ -60,6 +63,7 @@ import javax.servlet.http.HttpServletRequest;
       RequirementFacadeController.class,
       TaskFacadeController.class,
       ScheduleJobFacadeController.class,
+      ScheduleTriggerLogController.class,
       ProjectFacadeController.class,
       PlatformStubController.class,
       // Legacy controllers (routes must remain stable)
@@ -79,6 +83,7 @@ public class M6RoutingWebMvcTest {
   @MockBean private ScheduleJobFacadeAppService scheduleJobFacadeAppService;
   @MockBean private ProjectQueryService projectQueryService;
   @MockBean private ProjectAppService projectAppService;
+  @MockBean private ScheduleTriggerLogQueryService scheduleTriggerLogQueryService;
   @MockBean private AccountAuthSupport accountAuthSupport;
   @MockBean private DemoDataService demoDataService;
   @MockBean private OpsMonitoringQueryService opsMonitoringQueryService;
@@ -261,6 +266,23 @@ public class M6RoutingWebMvcTest {
         .andExpect(jsonPath("$.id").value("SJ1"));
 
     verify(scheduleJobFacadeAppService).createWithIdempotency(any(), eq("k1"));
+  }
+
+  @Test
+  void scheduleTriggerLogFacadeRouteIsWired() throws Exception {
+    ScheduleTriggerLog log = new ScheduleTriggerLog();
+    log.setId("stl_1");
+    log.setScheduleJobId("SJ1");
+    log.setTriggerStatus("DISPATCHED");
+    when(scheduleTriggerLogQueryService.listByScheduleJobId("SJ1"))
+        .thenReturn(Collections.singletonList(log));
+
+    mockMvc
+        .perform(get("/api/schedule-trigger-logs").queryParam("schedule_job_id", "SJ1"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$[0].id").value("stl_1"))
+        .andExpect(jsonPath("$[0].schedule_job_id").value("SJ1"))
+        .andExpect(jsonPath("$[0].trigger_status").value("DISPATCHED"));
   }
 
   @Test

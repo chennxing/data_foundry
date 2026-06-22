@@ -1,13 +1,24 @@
 package com.huatai.datafoundry.backend.schedule.infrastructure.persistence.mybatis.mapper;
 
 import com.huatai.datafoundry.backend.schedule.domain.model.ScheduleTriggerLog;
+import java.util.List;
 import org.apache.ibatis.annotations.Insert;
 import org.apache.ibatis.annotations.Mapper;
+import org.apache.ibatis.annotations.Select;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Update;
 
 @Mapper
 public interface ScheduleTriggerLogMapper {
+  @Select(
+      "select id, schedule_rule_id, schedule_job_id, task_group_id, trigger_type, "
+          + "trigger_source, business_date, trigger_param_json, trigger_status, skip_reason, "
+          + "error_message, started_at, ended_at, created_at "
+          + "from schedule_trigger_logs where schedule_job_id = #{scheduleJobId} "
+          + "order by created_at desc")
+  List<ScheduleTriggerLog> listByScheduleJobId(
+      @Param("scheduleJobId") String scheduleJobId);
+
   @Insert(
       "insert into schedule_trigger_logs (id, schedule_rule_id, schedule_job_id, task_group_id, "
           + "trigger_type, trigger_source, business_date, trigger_param_json, trigger_status, "

@@ -171,8 +171,8 @@ export type TaskGroupRun = {
   id: string;
   taskGroupId: string;
   wideTableId?: string;
-  triggerType: "manual" | "cron" | "backfill" | "resample" | "trial";
-  status: "queued" | "running" | "completed" | "failed";
+  triggerType: string;
+  status: string;
   startedAt: string;
   endedAt?: string;
   operator: string;
@@ -180,6 +180,23 @@ export type TaskGroupRun = {
 };
 
 export type ScheduleJob = TaskGroupRun;
+
+export type ScheduleTriggerLog = {
+  id: string;
+  scheduleJobId?: string;
+  scheduleRuleId?: string;
+  taskGroupId?: string;
+  triggerType: string;
+  triggerSource: string;
+  businessDate?: string;
+  triggerParamJson?: string;
+  triggerStatus: string;
+  skipReason?: string;
+  errorMessage?: string;
+  startedAt?: string;
+  endedAt?: string;
+  createdAt?: string;
+};
 
 export type DataLineage = {
   id: string;

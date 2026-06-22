@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { loadRequirementOperationalData } from "@/lib/api-client";
+import { fetchScheduleTriggerLogs, loadRequirementOperationalData } from "@/lib/api-client";
 import type { WideTable } from "@/lib/types";
 
 function buildWideTable(): WideTable {
@@ -151,6 +151,58 @@ describe("loadRequirementOperationalData", () => {
     await expect(loadRequirementOperationalData("P1", "R1", [buildWideTable()])).rejects.toThrow(
       "/task-runtime=runtime down",
     );
+  });
+});
+
+describe("fetchScheduleTriggerLogs", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  it("maps schedule trigger logs from the backend payload", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.endsWith("/api/schedule-trigger-logs?schedule_job_id=SJ1")) {
+          return jsonResponse([
+            {
+              id: "stl_1",
+              schedule_job_id: "SJ1",
+              task_group_id: "TG1",
+              trigger_type: "SCHEDULE",
+              trigger_source: "XXL_JOB",
+              trigger_status: "DISPATCHED",
+              trigger_param_json: "{\"ruleId\":\"SR1\"}",
+              created_at: "2026-06-22T09:00:00",
+            },
+          ]);
+        }
+        throw new Error(`Unexpected request: ${url}`);
+      }),
+    );
+
+    const logs = await fetchScheduleTriggerLogs("SJ1");
+
+    expect(logs).toEqual([
+      {
+        id: "stl_1",
+        scheduleJobId: "SJ1",
+        scheduleRuleId: undefined,
+        taskGroupId: "TG1",
+        triggerType: "SCHEDULE",
+        triggerSource: "XXL_JOB",
+        businessDate: undefined,
+        triggerParamJson: "{\"ruleId\":\"SR1\"}",
+        triggerStatus: "DISPATCHED",
+        skipReason: undefined,
+        errorMessage: undefined,
+        startedAt: undefined,
+        endedAt: undefined,
+        createdAt: "2026-06-22T09:00:00",
+      },
+    ]);
   });
 });
 

@@ -3,6 +3,7 @@ package com.huatai.datafoundry.backend.schedule.infrastructure.repository;
 import com.huatai.datafoundry.backend.schedule.domain.model.ScheduleTriggerLog;
 import com.huatai.datafoundry.backend.schedule.domain.repository.ScheduleTriggerLogRepository;
 import com.huatai.datafoundry.backend.schedule.infrastructure.persistence.mybatis.mapper.ScheduleTriggerLogMapper;
+import java.util.List;
 import org.springframework.stereotype.Repository;
 
 @Repository
@@ -11,6 +12,11 @@ public class MybatisScheduleTriggerLogRepository implements ScheduleTriggerLogRe
 
   public MybatisScheduleTriggerLogRepository(ScheduleTriggerLogMapper mapper) {
     this.mapper = mapper;
+  }
+
+  @Override
+  public List<ScheduleTriggerLog> listByScheduleJobId(String scheduleJobId) {
+    return mapper.listByScheduleJobId(scheduleJobId);
   }
 
   @Override
