@@ -2,6 +2,7 @@ package com.huatai.datafoundry.backend.schedule.application.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.huatai.datafoundry.backend.schedule.domain.model.ScheduleRule;
+import com.huatai.datafoundry.backend.schedule.domain.service.CronExpressionBuilder;
 import com.huatai.datafoundry.backend.schedule.domain.repository.ScheduleRuleRepository;
 import com.huatai.datafoundry.backend.task.domain.model.WideTablePlanSource;
 import com.huatai.datafoundry.contract.scheduler.ScheduleFrequency;
@@ -45,9 +46,13 @@ public class ScheduleRuleSyncAppService {
         text(template.get("trigger_time")),
         text(template.get("triggerTime")),
         "09:00"));
-    int offsetDays = nonNegativeInt(firstNonNull(
-        template.get("business_date_offset_days"),
-        template.get("businessDateOffsetDays")), 1);
+    int offsetDays =
+        CronExpressionBuilder.parseOffsetDays(
+            firstNonNull(
+                template.get("business_date_offset_days"),
+                template.get("businessDateOffsetDays")),
+            1,
+            "business_date_offset_days");
     boolean enabled = booleanValue(template.get("enabled"), true);
 
     List<ScheduleRule> records = new ArrayList<ScheduleRule>();
@@ -66,7 +71,8 @@ public class ScheduleRuleSyncAppService {
       rule.setRuleName(firstNonBlank(text(group.get("name")), indicatorGroupId) + " scheduled collection");
       rule.setRuleCode("schedule:" + rule.getId());
       rule.setFrequency(frequency);
-      rule.setCronExpression(buildCron(frequency, triggerTime));
+      rule.setCronExpression(
+          CronExpressionBuilder.build(frequency, triggerTime, Integer.valueOf(offsetDays)));
       rule.setBusinessDateMode("PREVIOUS_PERIOD");
       rule.setBusinessDateOffsetDays(Integer.valueOf(offsetDays));
       rule.setTriggerTime(triggerTime);
@@ -154,14 +160,6 @@ public class ScheduleRuleSyncAppService {
     return "sr_" + uuid.toString().replace("-", "");
   }
 
-  private static String buildCron(String frequency, LocalTime time) {
-    int second = time.getSecond();
-    int minute = time.getMinute();
-    int hour = time.getHour();
-    // Wake the rule daily; task_groups.scheduled_at is the exact due-time gate.
-    return second + " " + minute + " " + hour + " * * ?";
-  }
-
   private static String buildXxlSyncHash(ScheduleRule rule) {
     String payload =
         textOrEmpty(rule.getRuleName())
@@ -201,15 +199,6 @@ public class ScheduleRuleSyncAppService {
     return normalized.length() == 5
         ? LocalTime.parse(normalized + ":00")
         : LocalTime.parse(normalized);
-  }
-
-  private static int nonNegativeInt(Object value, int fallback) {
-    if (value == null) return fallback;
-    try {
-      return Math.max(0, Integer.parseInt(String.valueOf(value)));
-    } catch (Exception ignored) {
-      return fallback;
-    }
   }
 
   private static boolean booleanValue(Object value, boolean fallback) {

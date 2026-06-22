@@ -43,7 +43,7 @@ class XxlJobAdminClientTest {
     server
         .expect(requestTo("http://127.0.0.1:8080/jobinfo/insert"))
         .andExpect(content().string(containsString("executorHandler=dataCollectJobHandler")))
-        .andExpect(content().string(containsString("scheduleConf=0+30+8+*+*+%3F")))
+        .andExpect(content().string(containsString("scheduleConf=0+30+8+3+*+%3F")))
         .andRespond(json("{\"code\":200,\"data\":\"101\"}"));
     expectAction("/jobinfo/start", "101");
     server
@@ -176,7 +176,7 @@ class XxlJobAdminClientTest {
     command.setRuleId("rule-1");
     command.setRuleName("Monthly rule");
     command.setFrequency("MONTHLY");
-    command.setCronExpression("0 30 8 * * ?");
+    command.setCronExpression("0 30 8 3 * ?");
     command.setBusinessDateMode("PREVIOUS_PERIOD");
     command.setJobHandler("dataCollectJobHandler");
     command.setEnabled(Boolean.valueOf(enabled));

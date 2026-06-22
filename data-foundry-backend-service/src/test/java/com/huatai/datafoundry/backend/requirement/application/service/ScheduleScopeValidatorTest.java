@@ -70,6 +70,18 @@ class ScheduleScopeValidatorTest {
             Collections.singletonList(rule)));
   }
 
+  @Test
+  void rejectsOffsetThatCannotBeExpressedAsRealFrequencyCron() {
+    Map<String, Object> rule = rule("YEARLY");
+    rule.put("business_date_offset_days", 60);
+
+    assertThrows(
+        IllegalArgumentException.class,
+        () -> ScheduleScopeValidator.validate(
+            scope("YEARLY", "2025", "2026"),
+            Collections.singletonList(rule)));
+  }
+
   private static Map<String, Object> scope(
       String frequency, String start, String end) {
     Map<String, Object> businessDate = new HashMap<String, Object>();

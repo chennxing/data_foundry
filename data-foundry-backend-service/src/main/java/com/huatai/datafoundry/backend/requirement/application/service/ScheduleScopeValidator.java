@@ -1,5 +1,6 @@
 package com.huatai.datafoundry.backend.requirement.application.service;
 
+import com.huatai.datafoundry.backend.schedule.domain.service.CronExpressionBuilder;
 import com.huatai.datafoundry.contract.scheduler.ScheduleFrequency;
 import java.time.DateTimeException;
 import java.time.LocalTime;
@@ -61,6 +62,14 @@ final class ScheduleScopeValidator {
       validateTriggerTime(
           text(((Map<?, ?>) item).get("trigger_time")),
           text(((Map<?, ?>) item).get("triggerTime")));
+      int offsetDays =
+          CronExpressionBuilder.parseOffsetDays(
+              firstNonNull(
+                  ((Map<?, ?>) item).get("business_date_offset_days"),
+                  ((Map<?, ?>) item).get("businessDateOffsetDays")),
+              1,
+              "business_date_offset_days");
+      CronExpressionBuilder.validateExpressibleOffset(ruleFrequency.name(), Integer.valueOf(offsetDays));
     }
   }
 
@@ -88,5 +97,9 @@ final class ScheduleScopeValidator {
     }
     String text = String.valueOf(value).trim();
     return text.isEmpty() ? null : text;
+  }
+
+  private static Object firstNonNull(Object first, Object second) {
+    return first != null ? first : second;
   }
 }
