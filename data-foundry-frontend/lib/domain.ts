@@ -177,6 +177,7 @@ export type TaskGroupRun = {
   endedAt?: string;
   operator: string;
   logRef?: string;
+  errorMessage?: string;
 };
 
 export type ScheduleJob = TaskGroupRun;

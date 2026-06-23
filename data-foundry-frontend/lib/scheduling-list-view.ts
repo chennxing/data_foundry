@@ -16,12 +16,10 @@ export type ScheduleTriggerFilter =
 
 export type ScheduleStatusFilter =
   | ""
-  | "queued"
   | "running"
-  | "completed"
+  | "success"
   | "failed"
-  | "skipped"
-  | "dispatched";
+  | "skipped";
 
 export type SchedulingPeriodView = {
   taskGroup: TaskGroup;
@@ -135,15 +133,15 @@ export function buildSchedulingCollectionTaskRows(params: {
 }
 
 export function normalizeScheduleJobStatus(status?: string): string {
-  return String(status ?? "")
-    .trim()
-    .toLowerCase();
+  const normalized = String(status ?? "").trim().toLowerCase();
+  if (normalized === "dispatched" || normalized === "completed" || normalized === "success") {
+    return "success";
+  }
+  return normalized;
 }
 
 export function normalizeScheduleJobTriggerType(triggerType?: string): string {
-  const normalized = String(triggerType ?? "")
-    .trim()
-    .toLowerCase();
+  const normalized = String(triggerType ?? "").trim().toLowerCase();
   if (normalized === "schedule" || normalized === "scheduled" || normalized === "cron") {
     return "scheduled";
   }
@@ -164,10 +162,9 @@ export function getScheduleJobStatusLabel(status?: string): string {
   const normalized = normalizeScheduleJobStatus(status);
   if (normalized === "queued") return "排队中";
   if (normalized === "running") return "运行中";
-  if (normalized === "completed") return "已完成";
-  if (normalized === "failed") return "失败";
+  if (normalized === "success") return "调度成功";
+  if (normalized === "failed") return "调度失败";
   if (normalized === "skipped") return "已跳过";
-  if (normalized === "dispatched") return "已派发";
   return String(status ?? "-");
 }
 

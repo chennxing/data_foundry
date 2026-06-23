@@ -36,16 +36,19 @@ public class DataCollectJobHandler {
           "xxl-job:" + XxlJobHelper.getJobId() + ":" + XxlJobHelper.getJobLogFileName();
       Map<String, Object> result =
           dispatchAppService.dispatch(parsed, rawParam, scheduleJobId, idempotencyKey);
+      Object scheduleJobStatus = result.get("schedule_job_status");
       XxlJobHelper.log(
-          "Schedule dispatch completed, ruleId={}, status={}, taskGroupId={}, businessDate={}",
+          "Schedule dispatch completed, ruleId={}, status={}, scheduleJobStatus={}, taskGroupId={}, businessDate={}",
           parsed.getRuleId(),
           result.get("status"),
+          scheduleJobStatus,
           result.get("task_group_id"),
           result.get("business_date"));
       log.info(
-          "XXL-JOB schedule dispatch completed: ruleId={}, status={}, taskGroupId={}, businessDate={}",
+          "XXL-JOB schedule dispatch completed: ruleId={}, status={}, scheduleJobStatus={}, taskGroupId={}, businessDate={}",
           parsed.getRuleId(),
           result.get("status"),
+          scheduleJobStatus,
           result.get("task_group_id"),
           result.get("business_date"));
     } catch (Exception ex) {

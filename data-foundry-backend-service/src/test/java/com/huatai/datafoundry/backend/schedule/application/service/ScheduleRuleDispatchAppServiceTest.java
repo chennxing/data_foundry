@@ -12,7 +12,6 @@ import com.huatai.datafoundry.backend.schedule.application.command.ScheduleRuleD
 import com.huatai.datafoundry.backend.schedule.application.dto.ScheduleRuleDispatchResult;
 import com.huatai.datafoundry.backend.schedule.domain.model.ScheduleRule;
 import com.huatai.datafoundry.backend.schedule.domain.repository.ScheduleRuleRepository;
-import com.huatai.datafoundry.backend.task.application.service.TaskAppService;
 import com.huatai.datafoundry.backend.task.domain.model.TaskGroup;
 import com.huatai.datafoundry.backend.task.domain.repository.TaskGroupRepository;
 import java.time.LocalDateTime;
@@ -23,23 +22,26 @@ import org.mockito.Mockito;
 class ScheduleRuleDispatchAppServiceTest {
   private ScheduleRuleRepository ruleRepository;
   private TaskGroupRepository taskGroupRepository;
-  private TaskAppService taskAppService;
+  private ScheduleTaskGroupDispatchExecutorAppService dispatchExecutorAppService;
   private ScheduleTriggerLogAppService triggerLogAppService;
+  private ScheduleDispatchConfirmationAppService dispatchConfirmationAppService;
   private ScheduleRuleDispatchAppService service;
 
   @BeforeEach
   void setUp() {
     ruleRepository = Mockito.mock(ScheduleRuleRepository.class);
     taskGroupRepository = Mockito.mock(TaskGroupRepository.class);
-    taskAppService = Mockito.mock(TaskAppService.class);
+    dispatchExecutorAppService = Mockito.mock(ScheduleTaskGroupDispatchExecutorAppService.class);
     triggerLogAppService = Mockito.mock(ScheduleTriggerLogAppService.class);
+    dispatchConfirmationAppService = Mockito.mock(ScheduleDispatchConfirmationAppService.class);
     when(triggerLogAppService.createRunning(any(), any(), any())).thenReturn("stl-1");
     service =
         new ScheduleRuleDispatchAppService(
             ruleRepository,
             taskGroupRepository,
-            taskAppService,
-            triggerLogAppService);
+            triggerLogAppService,
+            dispatchConfirmationAppService,
+            dispatchExecutorAppService);
   }
 
   @Test
@@ -51,6 +53,7 @@ class ScheduleRuleDispatchAppServiceTest {
         service.dispatch("rule-1", command("2026-05"), "key-1");
 
     assertEquals("SKIPPED_DISABLED", result.getStatus());
+    assertEquals("SKIPPED", result.getScheduleJobStatus());
     verify(taskGroupRepository, never()).insertIfAbsent(any());
   }
 
@@ -72,8 +75,9 @@ class ScheduleRuleDispatchAppServiceTest {
         service.dispatch("rule-1", command("2026-05"), "key-1");
 
     assertEquals("SKIPPED_ALREADY_DISPATCHED", result.getStatus());
+    assertEquals("SKIPPED", result.getScheduleJobStatus());
     assertEquals("tg-existing", result.getTaskGroupId());
-    verify(taskAppService, never()).executeTaskGroup(any(), any(), any());
+    verify(dispatchExecutorAppService, never()).executeTaskGroup(any(), any());
   }
 
   @Test
@@ -89,15 +93,49 @@ class ScheduleRuleDispatchAppServiceTest {
             taskGroupRepository.getByScheduleRulePeriodAndIndicatorGroup(
                 "rule-1", "2026-05", "ig-1"))
         .thenReturn(existing);
+    when(dispatchConfirmationAppService.confirmTaskGroupStarted("tg-existing"))
+        .thenReturn(
+            ScheduleDispatchConfirmationAppService.DispatchConfirmation.success(
+                "ALL_FETCH_TASKS_ACCEPTED"));
 
     ScheduleRuleDispatchResult result =
         service.dispatch("rule-1", command("2026-05"), "key-1");
 
     assertEquals("DISPATCHED", result.getStatus());
+    assertEquals("SUCCESS", result.getScheduleJobStatus());
     assertEquals("tg-existing", result.getTaskGroupId());
     verify(taskGroupRepository, never()).insertIfAbsent(any());
-    verify(taskAppService).executeTaskGroup(eq("tg-existing"), any(), eq("key-1"));
+    verify(dispatchExecutorAppService).executeTaskGroup(eq("tg-existing"), eq("key-1"));
     verify(triggerLogAppService).markDispatched("stl-1", "tg-existing");
+  }
+
+  @Test
+  void returnsFailedWhenDispatchConfirmationFails() {
+    ScheduleRule rule = rule(true);
+    TaskGroup existing = new TaskGroup();
+    existing.setId("tg-existing");
+    existing.setBusinessDate("2026-05");
+    existing.setStatus("pending");
+    existing.setScheduledAt(LocalDateTime.now().minusMinutes(1));
+    when(ruleRepository.getById("rule-1")).thenReturn(rule);
+    when(
+            taskGroupRepository.getByScheduleRulePeriodAndIndicatorGroup(
+                "rule-1", "2026-05", "ig-1"))
+        .thenReturn(existing);
+    when(dispatchConfirmationAppService.confirmTaskGroupStarted("tg-existing"))
+        .thenReturn(
+            ScheduleDispatchConfirmationAppService.DispatchConfirmation.failed(
+                "FETCH_TASK_DISPATCH_FAILED",
+                "Collection API dispatch failed for 1 fetch task(s)"));
+
+    ScheduleRuleDispatchResult result =
+        service.dispatch("rule-1", command("2026-05"), "key-1");
+
+    assertEquals("FAILED", result.getStatus());
+    assertEquals("FAILED", result.getScheduleJobStatus());
+    assertEquals("Collection API dispatch failed for 1 fetch task(s)", result.getErrorMessage());
+    verify(triggerLogAppService)
+        .markFailed("stl-1", "Collection API dispatch failed for 1 fetch task(s)");
   }
 
   @Test
@@ -118,7 +156,8 @@ class ScheduleRuleDispatchAppServiceTest {
         service.dispatch("rule-1", command("2026-05"), "key-1");
 
     assertEquals("SKIPPED_NOT_DUE", result.getStatus());
-    verify(taskAppService, never()).executeTaskGroup(any(), any(), any());
+    assertEquals("SKIPPED", result.getScheduleJobStatus());
+    verify(dispatchExecutorAppService, never()).executeTaskGroup(any(), any());
   }
 
   @Test
@@ -129,7 +168,8 @@ class ScheduleRuleDispatchAppServiceTest {
         service.dispatch("rule-1", command("2026-05"), "key-1");
 
     assertEquals("SKIPPED_TASK_GROUP_NOT_FOUND", result.getStatus());
-    verify(taskAppService, never()).executeTaskGroup(any(), any(), any());
+    assertEquals("SKIPPED", result.getScheduleJobStatus());
+    verify(dispatchExecutorAppService, never()).executeTaskGroup(any(), any());
   }
 
   @Test
@@ -166,7 +206,7 @@ class ScheduleRuleDispatchAppServiceTest {
   private static ScheduleRuleDispatchCommand command(String businessDate) {
     ScheduleRuleDispatchCommand command = new ScheduleRuleDispatchCommand();
     command.setBusinessDate(businessDate);
-    command.setTriggerType("SCHEDULE");
+    command.setTriggerType("SCHEDULED");
     command.setOperator("system");
     return command;
   }

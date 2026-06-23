@@ -4,7 +4,6 @@ import com.huatai.datafoundry.backend.schedule.application.command.ScheduleRuleD
 import com.huatai.datafoundry.backend.schedule.application.dto.ScheduleRuleDispatchResult;
 import com.huatai.datafoundry.backend.schedule.domain.model.ScheduleRule;
 import com.huatai.datafoundry.backend.schedule.domain.repository.ScheduleRuleRepository;
-import com.huatai.datafoundry.backend.task.application.service.TaskAppService;
 import com.huatai.datafoundry.backend.task.domain.model.TaskGroup;
 import com.huatai.datafoundry.backend.task.domain.repository.TaskGroupRepository;
 import com.huatai.datafoundry.contract.scheduler.ScheduleFrequency;
@@ -20,18 +19,21 @@ import org.springframework.web.server.ResponseStatusException;
 public class ScheduleRuleDispatchAppService {
   private final ScheduleRuleRepository scheduleRuleRepository;
   private final TaskGroupRepository taskGroupRepository;
-  private final TaskAppService taskAppService;
   private final ScheduleTriggerLogAppService triggerLogAppService;
+  private final ScheduleDispatchConfirmationAppService dispatchConfirmationAppService;
+  private final ScheduleTaskGroupDispatchExecutorAppService dispatchExecutorAppService;
 
   public ScheduleRuleDispatchAppService(
       ScheduleRuleRepository scheduleRuleRepository,
       TaskGroupRepository taskGroupRepository,
-      TaskAppService taskAppService,
-      ScheduleTriggerLogAppService triggerLogAppService) {
+      ScheduleTriggerLogAppService triggerLogAppService,
+      ScheduleDispatchConfirmationAppService dispatchConfirmationAppService,
+      ScheduleTaskGroupDispatchExecutorAppService dispatchExecutorAppService) {
     this.scheduleRuleRepository = scheduleRuleRepository;
     this.taskGroupRepository = taskGroupRepository;
-    this.taskAppService = taskAppService;
     this.triggerLogAppService = triggerLogAppService;
+    this.dispatchConfirmationAppService = dispatchConfirmationAppService;
+    this.dispatchExecutorAppService = dispatchExecutorAppService;
   }
 
   @Transactional
@@ -70,7 +72,14 @@ public class ScheduleRuleDispatchAppService {
         scheduleRuleRepository.updateLastTrigger(
             rule.getId(), triggerTime, null, "SKIPPED_DISABLED");
         return result(
-            rule.getId(), null, requestedBusinessDate, triggerLogId, "SKIPPED_DISABLED");
+            rule.getId(),
+            null,
+            requestedBusinessDate,
+            triggerLogId,
+            "SKIPPED_DISABLED",
+            "SKIPPED",
+            "RULE_DISABLED",
+            null);
       }
 
       TaskGroup taskGroup =
@@ -91,7 +100,10 @@ public class ScheduleRuleDispatchAppService {
             null,
             businessDate,
             triggerLogId,
-            "SKIPPED_TASK_GROUP_NOT_FOUND");
+            "SKIPPED_TASK_GROUP_NOT_FOUND",
+            "SKIPPED",
+            "TASK_GROUP_NOT_FOUND",
+            null);
       }
 
       if (taskGroup.getScheduledAt() == null) {
@@ -104,7 +116,10 @@ public class ScheduleRuleDispatchAppService {
             taskGroup.getId(),
             businessDate,
             triggerLogId,
-            "SKIPPED_SCHEDULE_NOT_PLANNED");
+            "SKIPPED_SCHEDULE_NOT_PLANNED",
+            "SKIPPED",
+            "SCHEDULE_NOT_PLANNED",
+            null);
       }
 
       if (taskGroup.getScheduledAt().isAfter(triggerTime)) {
@@ -117,7 +132,10 @@ public class ScheduleRuleDispatchAppService {
             taskGroup.getId(),
             businessDate,
             triggerLogId,
-            "SKIPPED_NOT_DUE");
+            "SKIPPED_NOT_DUE",
+            "SKIPPED",
+            "TASK_GROUP_NOT_DUE",
+            null);
       }
 
       String status =
@@ -134,19 +152,44 @@ public class ScheduleRuleDispatchAppService {
             taskGroup.getId(),
             businessDate,
             triggerLogId,
-            "SKIPPED_ALREADY_DISPATCHED");
+            "SKIPPED_ALREADY_DISPATCHED",
+            "SKIPPED",
+            "TASK_GROUP_ALREADY_DISPATCHED",
+            null);
       }
 
-      taskAppService.executeTaskGroup(
+      dispatchExecutorAppService.executeTaskGroup(
           taskGroup.getId(),
-          Collections.<String, Object>emptyMap(),
           firstNonBlank(idempotencyKey, "schedule-rule:" + rule.getId() + ":" + businessDate));
 
-      triggerLogAppService.markDispatched(triggerLogId, taskGroup.getId());
-      scheduleRuleRepository.updateLastTrigger(
-          rule.getId(), triggerTime, null, "DISPATCHED");
+      ScheduleDispatchConfirmationAppService.DispatchConfirmation confirmation =
+          dispatchConfirmationAppService.confirmTaskGroupStarted(taskGroup.getId());
+      if (confirmation.isSuccess()) {
+        triggerLogAppService.markDispatched(triggerLogId, taskGroup.getId());
+        scheduleRuleRepository.updateLastTrigger(
+            rule.getId(), triggerTime, null, "DISPATCHED");
+        return result(
+            rule.getId(),
+            taskGroup.getId(),
+            businessDate,
+            triggerLogId,
+            "DISPATCHED",
+            "SUCCESS",
+            confirmation.getConfirmationSource(),
+            null);
+      }
+
+      triggerLogAppService.markFailed(triggerLogId, confirmation.getErrorMessage());
+      scheduleRuleRepository.updateLastTrigger(rule.getId(), triggerTime, null, "FAILED");
       return result(
-          rule.getId(), taskGroup.getId(), businessDate, triggerLogId, "DISPATCHED");
+          rule.getId(),
+          taskGroup.getId(),
+          businessDate,
+          triggerLogId,
+          "FAILED",
+          "FAILED",
+          confirmation.getConfirmationSource(),
+          confirmation.getErrorMessage());
     } catch (RuntimeException ex) {
       if (triggerLogId == null) {
         triggerLogId =
@@ -163,14 +206,20 @@ public class ScheduleRuleDispatchAppService {
       String taskGroupId,
       String businessDate,
       String triggerLogId,
-      String status) {
+      String status,
+      String scheduleJobStatus,
+      String confirmationSource,
+      String errorMessage) {
     ScheduleRuleDispatchResult result = new ScheduleRuleDispatchResult();
-    result.setOk(!"FAILED".equals(status));
+    result.setOk(!"FAILED".equals(scheduleJobStatus));
     result.setScheduleRuleId(ruleId);
     result.setTaskGroupId(taskGroupId);
     result.setBusinessDate(businessDate);
     result.setTriggerLogId(triggerLogId);
     result.setStatus(status);
+    result.setScheduleJobStatus(scheduleJobStatus);
+    result.setConfirmationSource(confirmationSource);
+    result.setErrorMessage(errorMessage);
     return result;
   }
 

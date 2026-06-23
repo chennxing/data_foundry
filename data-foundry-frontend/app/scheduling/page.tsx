@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { CalendarClock, ChevronDown, ChevronRight, X } from "lucide-react";
 import type { ScheduleJob, ScheduleTriggerLog } from "@/lib/domain";
+import { getCurrentUser } from "@/lib/auth-permissions";
 import type { FetchTask, Project, Requirement, TaskGroup, WideTable } from "@/lib/types";
 import {
   createScheduleJob,
@@ -24,6 +25,7 @@ import { cn } from "@/lib/utils";
 const statusStyle: Record<string, string> = {
   queued: "bg-gray-100 text-gray-700",
   running: "bg-blue-100 text-blue-700",
+  success: "bg-green-100 text-green-700",
   completed: "bg-green-100 text-green-700",
   failed: "bg-red-100 text-red-700",
   skipped: "bg-slate-100 text-slate-700",
@@ -93,7 +95,12 @@ export default function SchedulingPage() {
   );
 
   const handleManualTrigger = async (taskGroupId: string) => {
-    await createScheduleJob({ taskGroupId, triggerType: "manual", operator: "manual" });
+    const currentUser = getCurrentUser();
+    await createScheduleJob({
+      taskGroupId,
+      triggerType: "MANUAL",
+      operator: currentUser?.account || currentUser?.name || "system",
+    });
     await loadData();
   };
 
@@ -155,7 +162,6 @@ export default function SchedulingPage() {
               <option value="scheduled">定时调度</option>
               <option value="manual">手动执行</option>
               <option value="backfill">补采重跑</option>
-              <option value="resample">重试</option>
               <option value="trial">试运行</option>
             </select>
             <select
@@ -165,12 +171,10 @@ export default function SchedulingPage() {
               aria-label="筛选状态"
             >
               <option value="">全部状态</option>
-              <option value="queued">排队中</option>
               <option value="running">运行中</option>
-              <option value="completed">已完成</option>
-              <option value="failed">失败</option>
+              <option value="success">调度成功</option>
+              <option value="failed">调度失败</option>
               <option value="skipped">已跳过</option>
-              <option value="dispatched">已派发</option>
             </select>
             <button
               type="button"
@@ -296,9 +300,9 @@ export default function SchedulingPage() {
                                 period.jobs.map((job) => {
                                   const jobStatus = normalizeScheduleJobStatus(job.status);
                                   const periodLabel =
-                                    period.taskGroup.businessDateLabel
-                                    || period.taskGroup.businessDate
-                                    || period.taskGroup.id;
+                                    period.taskGroup.businessDateLabel ||
+                                    period.taskGroup.businessDate ||
+                                    period.taskGroup.id;
 
                                   return (
                                     <tr key={job.id}>
@@ -423,6 +427,15 @@ function TriggerRecordModal({
             <TriggerField label="结束" value={formatScheduleListTime(state.job.endedAt)} />
             <TriggerField label="触发者" value={state.job.operator || "-"} />
           </div>
+
+          {state.job.errorMessage ? (
+            <div className="space-y-1">
+              <div className="text-sm font-semibold">调度失败原因</div>
+              <div className="rounded-md border border-red-200 bg-red-50 px-3 py-3 text-sm text-red-700">
+                {state.job.errorMessage}
+              </div>
+            </div>
+          ) : null}
 
           <div className="space-y-2">
             <div className="text-sm font-semibold">触发日志</div>

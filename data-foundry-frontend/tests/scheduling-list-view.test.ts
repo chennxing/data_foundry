@@ -154,10 +154,10 @@ function buildScheduleJobs(): ScheduleJob[] {
       id: "SJ1",
       taskGroupId: "TG1",
       triggerType: "SCHEDULE",
-      status: "DISPATCHED",
+      status: "SUCCESS",
       startedAt: "2026-06-22T10:00:00.000Z",
       endedAt: "2026-06-22T10:01:00.000Z",
-      operator: "xxl-job-auto-sync",
+      operator: "xxl-job",
     },
     {
       id: "SJ2",
@@ -218,6 +218,7 @@ describe("scheduling-list-view", () => {
   it("formats labels for trigger type and status", () => {
     expect(normalizeScheduleJobTriggerType("cron")).toBe("scheduled");
     expect(getScheduleJobTriggerLabel("SCHEDULE")).toBe("定时调度");
-    expect(getScheduleJobStatusLabel("DISPATCHED")).toBe("已派发");
+    expect(getScheduleJobStatusLabel("SUCCESS")).toBe("调度成功");
+    expect(getScheduleJobStatusLabel("DISPATCHED")).toBe("调度成功");
   });
 });

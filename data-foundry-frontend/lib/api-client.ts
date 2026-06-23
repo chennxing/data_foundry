@@ -1068,6 +1068,7 @@ function mapScheduleJob(raw: any): ScheduleJob {
     endedAt: raw.ended_at ?? undefined,
     operator: raw.operator,
     logRef: raw.log_ref ?? undefined,
+    errorMessage: raw.error_message ?? undefined,
   };
 }
 
@@ -1133,8 +1134,8 @@ export async function createScheduleJob(data: {
     body: JSON.stringify({
       task_group_id: data.taskGroupId,
       task_id: data.taskId,
-      trigger_type: data.triggerType ?? "manual",
-      operator: data.operator ?? "manual",
+      trigger_type: data.triggerType ?? "MANUAL",
+      operator: data.operator ?? "system",
       backfill_request_id: data.backfillRequestId,
     }),
   });

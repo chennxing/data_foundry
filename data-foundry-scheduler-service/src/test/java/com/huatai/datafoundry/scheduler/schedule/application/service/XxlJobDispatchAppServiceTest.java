@@ -36,9 +36,9 @@ class XxlJobDispatchAppServiceTest {
 
     assertEquals("rule-local", prepared.getRuleId());
     assertEquals("MONTHLY", prepared.getFrequency());
-    assertEquals("SCHEDULE", prepared.getTriggerType());
+    assertEquals("SCHEDULED", prepared.getTriggerType());
     assertEquals("PREVIOUS_PERIOD", prepared.getBusinessDateMode());
-    assertEquals("system", prepared.getOperator());
+    assertEquals("xxl-job", prepared.getOperator());
     assertNull(prepared.getBusinessDate());
   }
 
@@ -97,6 +97,7 @@ class XxlJobDispatchAppServiceTest {
     param.setFrequency("monthly");
     Map<String, Object> response = new HashMap<String, Object>();
     response.put("status", "DISPATCHED");
+    response.put("schedule_job_status", "SUCCESS");
     response.put("task_group_id", "tg-1");
     response.put("business_date", "2026-05");
     when(backendGateway.dispatchScheduleRule(eq("rule-local"), Mockito.any(), eq("xxl:1")))
@@ -124,7 +125,7 @@ class XxlJobDispatchAppServiceTest {
             eq(created.getId()),
             eq("tg-1"),
             eq("2026-05"),
-            eq("DISPATCHED"),
+            eq("SUCCESS"),
             Mockito.any(),
             isNull());
   }
@@ -135,6 +136,7 @@ class XxlJobDispatchAppServiceTest {
     param.setRuleId("rule-local");
     Map<String, Object> response = new HashMap<String, Object>();
     response.put("status", "SKIPPED_ALREADY_EXISTS");
+    response.put("schedule_job_status", "SKIPPED");
     response.put("task_group_id", "tg-existing");
     response.put("business_date", "2026-05");
     when(backendGateway.dispatchScheduleRule(eq("rule-local"), Mockito.any(), eq("xxl:skip")))
@@ -158,8 +160,12 @@ class XxlJobDispatchAppServiceTest {
   void recordsBackendFailureAndRethrows() {
     ScheduleDispatchParam param = new ScheduleDispatchParam();
     param.setRuleId("rule-local");
+    Map<String, Object> response = new HashMap<String, Object>();
+    response.put("status", "FAILED");
+    response.put("schedule_job_status", "FAILED");
+    response.put("error_message", "Collection API dispatch failed for 1 fetch task(s)");
     when(backendGateway.dispatchScheduleRule(eq("rule-local"), Mockito.any(), eq("xxl:fail")))
-        .thenThrow(new IllegalStateException("backend unavailable"));
+        .thenReturn(response);
 
     assertThrows(
         IllegalStateException.class,
@@ -174,6 +180,6 @@ class XxlJobDispatchAppServiceTest {
             isNull(),
             eq("FAILED"),
             Mockito.any(),
-            eq("backend unavailable"));
+            eq("Collection API dispatch failed for 1 fetch task(s)"));
   }
 }

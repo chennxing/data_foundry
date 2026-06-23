@@ -64,12 +64,8 @@ public class ScheduleJobAppService {
     }
 
     String startedAt = Instant.now().toString();
-    String triggerType = body.getTriggerType() != null && body.getTriggerType().trim().length() > 0
-        ? body.getTriggerType().trim()
-        : "manual";
-    String operator = body.getOperator() != null && body.getOperator().trim().length() > 0
-        ? body.getOperator().trim()
-        : "manual";
+    String triggerType = normalizeTriggerType(body.getTriggerType());
+    String operator = defaultValue(body.getOperator(), "system");
 
     ScheduleJob record = new ScheduleJob();
     record.setId(id);
@@ -80,7 +76,7 @@ public class ScheduleJobAppService {
     record.setBusinessDate(body.getBusinessDate());
     record.setRequestPayload(body.getRequestPayload());
     record.setTriggerType(triggerType);
-    record.setStatus("running");
+    record.setStatus("RUNNING");
     record.setStartedAt(startedAt);
     record.setEndedAt(null);
     record.setOperator(operator);
@@ -122,5 +118,22 @@ public class ScheduleJobAppService {
 
   private static String defaultValue(String value, String fallback) {
     return value != null && !value.trim().isEmpty() ? value.trim() : fallback;
+  }
+
+  private static String normalizeTriggerType(String rawValue) {
+    String value = defaultValue(rawValue, "MANUAL").trim().toUpperCase();
+    if ("SCHEDULE".equals(value) || "SCHEDULED".equals(value) || "CRON".equals(value)) {
+      return "SCHEDULED";
+    }
+    if ("BACKFILL".equals(value)) {
+      return "BACKFILL";
+    }
+    if ("TRIAL".equals(value)) {
+      return "TRIAL";
+    }
+    if ("MANUAL".equals(value)) {
+      return "MANUAL";
+    }
+    return value;
   }
 }

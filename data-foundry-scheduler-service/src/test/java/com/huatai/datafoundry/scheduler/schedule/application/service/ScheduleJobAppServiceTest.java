@@ -31,7 +31,7 @@ class ScheduleJobAppServiceTest {
     record.setErrorMessage("none");
     when(
             repository.list(
-                "SCHEDULE", "FAILED", "tg-1", "rule-1", "RULE_DISPATCH"))
+                "SCHEDULED", "FAILED", "tg-1", "rule-1", "RULE_DISPATCH"))
         .thenReturn(Collections.singletonList(record));
     ScheduleJobAppService service =
         new ScheduleJobAppService(
@@ -39,7 +39,7 @@ class ScheduleJobAppServiceTest {
 
     ScheduleJobReadDto result =
         service
-            .list("SCHEDULE", "FAILED", "tg-1", "rule-1", "RULE_DISPATCH")
+            .list("SCHEDULED", "FAILED", "tg-1", "rule-1", "RULE_DISPATCH")
             .get(0);
 
     assertEquals("RULE_DISPATCH", result.getJobSource());
@@ -60,7 +60,7 @@ class ScheduleJobAppServiceTest {
     command.setScheduleRuleId("rule-1");
     command.setBusinessDate("2026-05");
     command.setRequestPayload("{\"ruleId\":\"rule-1\"}");
-    command.setTriggerType("SCHEDULE");
+    command.setTriggerType("SCHEDULED");
     command.setOperator("system");
 
     ScheduleJobReadDto result = service.create(command, "rule-dispatch-1");
@@ -68,6 +68,8 @@ class ScheduleJobAppServiceTest {
     ArgumentCaptor<ScheduleJob> captor = ArgumentCaptor.forClass(ScheduleJob.class);
     verify(repository).insert(captor.capture());
     assertEquals("RULE_DISPATCH", captor.getValue().getJobSource());
+    assertEquals("RUNNING", captor.getValue().getStatus());
+    assertEquals("SCHEDULED", captor.getValue().getTriggerType());
     assertEquals("rule-1", result.getScheduleRuleId());
     verify(eventPublisher, never()).publishEvent(any());
   }

@@ -214,7 +214,7 @@ public class XxlJobAdminClient implements XxlJobAdminGateway {
     param.put("frequency", command.getFrequency());
     param.put("triggerType", "SCHEDULED");
     param.put("businessDateMode", command.getBusinessDateMode());
-    param.put("operator", "xxl-job-auto-sync");
+    param.put("operator", "xxl-job");
     try {
       return objectMapper.writeValueAsString(param);
     } catch (JsonProcessingException ex) {

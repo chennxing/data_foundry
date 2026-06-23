@@ -46,8 +46,9 @@ public class MybatisScheduleJobRepository implements ScheduleJobRepository {
   }
 
   @Override
-  public int updateStatus(String jobId, String status, String endedAt, String logRef) {
-    return mapper.updateStatus(jobId, status, endedAt, logRef);
+  public int updateStatus(
+      String jobId, String status, String endedAt, String logRef, String errorMessage) {
+    return mapper.updateStatus(jobId, status, endedAt, logRef, errorMessage);
   }
 
   @Override

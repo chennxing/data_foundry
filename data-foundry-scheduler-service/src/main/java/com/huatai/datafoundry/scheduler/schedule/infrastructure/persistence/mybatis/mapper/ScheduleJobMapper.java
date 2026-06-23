@@ -46,8 +46,15 @@ public interface ScheduleJobMapper {
           + "#{status}, #{startedAt}, #{endedAt}, #{operator}, #{logRef})")
   int insert(ScheduleJobRecord record);
 
-  @Update("update schedule_jobs set status = #{status}, ended_at = #{endedAt}, log_ref = #{logRef} where id = #{id}")
-  int updateStatus(@Param("id") String id, @Param("status") String status, @Param("endedAt") String endedAt, @Param("logRef") String logRef);
+  @Update(
+      "update schedule_jobs set status = #{status}, ended_at = #{endedAt}, "
+          + "log_ref = #{logRef}, error_message = #{errorMessage} where id = #{id}")
+  int updateStatus(
+      @Param("id") String id,
+      @Param("status") String status,
+      @Param("endedAt") String endedAt,
+      @Param("logRef") String logRef,
+      @Param("errorMessage") String errorMessage);
 
   @Update(
       "update schedule_jobs set task_group_id = #{taskGroupId}, business_date = #{businessDate}, "

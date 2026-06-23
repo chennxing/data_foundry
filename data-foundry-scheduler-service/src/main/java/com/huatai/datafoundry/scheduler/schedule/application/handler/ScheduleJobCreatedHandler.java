@@ -70,14 +70,22 @@ public class ScheduleJobCreatedHandler {
 
       AgentExecutionResponse resp = agentGateway.execute(req, "schedule-job:" + jobId);
       String endedAt = Instant.now().toString();
-      String status = resp != null && "completed".equalsIgnoreCase(resp.getStatus()) ? "completed" : "failed";
-      scheduleJobRepository.updateStatus(jobId, status, endedAt, record.getLogRef());
+      boolean completed = resp != null && "completed".equalsIgnoreCase(resp.getStatus());
+      String scheduleJobStatus = completed ? "SUCCESS" : "FAILED";
+      String callbackStatus = completed ? "completed" : "failed";
+      String errorMessage = completed ? null : truncate(resp != null ? resp.getErrorMessage() : null);
+      if (errorMessage == null && !completed) {
+        errorMessage = "Agent execution did not return completed status";
+      }
+      scheduleJobRepository.updateStatus(
+          jobId, scheduleJobStatus, endedAt, record.getLogRef(), errorMessage);
 
-      callbackBackend(record, status, endedAt, resp);
+      callbackBackend(record, callbackStatus, endedAt, resp);
     } catch (Exception ex) {
       log.warn("Agent execution failed for job {}: {}", jobId, ex.getMessage());
       String endedAt = Instant.now().toString();
-      scheduleJobRepository.updateStatus(jobId, "failed", endedAt, record.getLogRef());
+      scheduleJobRepository.updateStatus(
+          jobId, "FAILED", endedAt, record.getLogRef(), truncate(ex.getMessage()));
       try {
         callbackBackend(record, "failed", endedAt, null);
       } catch (Exception ignored) {
@@ -108,5 +116,12 @@ public class ScheduleJobCreatedHandler {
     } catch (Exception ex) {
       log.warn("Backend callback failed for job {}: {}", record.getId(), ex.getMessage());
     }
+  }
+
+  private static String truncate(String value) {
+    if (value == null || value.length() <= 2000) {
+      return value;
+    }
+    return value.substring(0, 2000);
   }
 }

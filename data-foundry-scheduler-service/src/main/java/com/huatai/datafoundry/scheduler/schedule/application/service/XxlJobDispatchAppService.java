@@ -33,7 +33,7 @@ public class XxlJobDispatchAppService {
     ScheduleFrequency frequency =
         ScheduleFrequency.parse(defaultValue(param.getFrequency(), "MONTHLY"));
     param.setFrequency(frequency.name());
-    param.setTriggerType(defaultValue(param.getTriggerType(), "SCHEDULE").toUpperCase());
+    param.setTriggerType(normalizeTriggerType(param.getTriggerType()));
     String businessDate = trimToNull(param.getBusinessDate());
     param.setBusinessDate(
         businessDate != null ? frequency.normalizeBusinessDate(businessDate) : null);
@@ -45,7 +45,7 @@ public class XxlJobDispatchAppService {
           "Unsupported businessDateMode: " + businessDateMode);
     }
     param.setBusinessDateMode(businessDateMode);
-    param.setOperator(defaultValue(param.getOperator(), "system"));
+    param.setOperator(defaultValue(param.getOperator(), "xxl-job"));
     return param;
   }
 
@@ -83,16 +83,16 @@ public class XxlJobDispatchAppService {
     }
 
     String backendStatus = text(result != null ? result.get("status") : null);
-    String localStatus = mapDispatchStatus(backendStatus);
+    String localStatus = mapDispatchStatus(result);
     String taskGroupId = text(result != null ? result.get("task_group_id") : null);
     String businessDate =
         firstNonBlank(
             text(result != null ? result.get("business_date") : null),
             prepared.getBusinessDate());
-    String errorMessage =
-        "FAILED".equals(localStatus)
-            ? "Backend returned dispatch status " + backendStatus
-            : null;
+    String backendErrorMessage = text(result != null ? result.get("error_message") : null);
+    String errorMessage = "FAILED".equals(localStatus)
+        ? firstNonBlank(backendErrorMessage, "Backend returned dispatch status " + backendStatus)
+        : null;
     scheduleJobRepository.updateDispatchResult(
         scheduleJobId,
         taskGroupId,
@@ -131,11 +131,25 @@ public class XxlJobDispatchAppService {
     scheduleJobRepository.insert(record);
   }
 
-  private static String mapDispatchStatus(String status) {
+  private static String mapDispatchStatus(Map<String, Object> result) {
+    String scheduleJobStatus = text(result != null ? result.get("schedule_job_status") : null);
+    if (scheduleJobStatus != null) {
+      String normalized = scheduleJobStatus.trim().toUpperCase();
+      if ("SUCCESS".equals(normalized) || "FAILED".equals(normalized) || "SKIPPED".equals(normalized)) {
+        return normalized;
+      }
+      if ("RUNNING".equals(normalized)) {
+        return "RUNNING";
+      }
+    }
+    String status = text(result != null ? result.get("status") : null);
     if (status == null) return "FAILED";
     String normalized = status.trim().toUpperCase();
-    if ("DISPATCHED".equals(normalized)) return "DISPATCHED";
+    if ("DISPATCHED".equals(normalized) || "COMPLETED".equals(normalized) || "SUCCESS".equals(normalized)) {
+      return "SUCCESS";
+    }
     if (normalized.startsWith("SKIPPED")) return "SKIPPED";
+    if ("RUNNING".equals(normalized)) return "RUNNING";
     return "FAILED";
   }
 
@@ -161,6 +175,14 @@ public class XxlJobDispatchAppService {
   private static String defaultValue(String value, String defaultValue) {
     String normalized = trimToNull(value);
     return normalized != null ? normalized : defaultValue;
+  }
+
+  private static String normalizeTriggerType(String value) {
+    String normalized = defaultValue(value, "SCHEDULED").toUpperCase();
+    if ("SCHEDULE".equals(normalized) || "SCHEDULED".equals(normalized) || "CRON".equals(normalized)) {
+      return "SCHEDULED";
+    }
+    return normalized;
   }
 
   private static String trimToNull(String value) {

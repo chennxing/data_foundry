@@ -15,7 +15,7 @@ public interface ScheduleJobRepository {
 
   int insert(ScheduleJob scheduleJob);
 
-  int updateStatus(String jobId, String status, String endedAt, String logRef);
+  int updateStatus(String jobId, String status, String endedAt, String logRef, String errorMessage);
 
   int updateDispatchResult(
       String jobId,
