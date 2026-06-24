@@ -24,11 +24,20 @@ public interface CollectionSearchGateway {
     private final boolean success;
     private final String taskId;
     private final String errorMessage;
+    private final Integer httpStatusCode;
+    private final String rawResponseBody;
 
     public CollectionSearchResult(boolean success, String taskId, String errorMessage) {
+      this(success, taskId, errorMessage, null, null);
+    }
+
+    public CollectionSearchResult(
+        boolean success, String taskId, String errorMessage, Integer httpStatusCode, String rawResponseBody) {
       this.success = success;
       this.taskId = taskId;
       this.errorMessage = errorMessage;
+      this.httpStatusCode = httpStatusCode;
+      this.rawResponseBody = rawResponseBody;
     }
 
     public boolean isSuccess() {
@@ -41,6 +50,14 @@ public interface CollectionSearchGateway {
 
     public String getErrorMessage() {
       return errorMessage;
+    }
+
+    public Integer getHttpStatusCode() {
+      return httpStatusCode;
+    }
+
+    public String getRawResponseBody() {
+      return rawResponseBody;
     }
   }
 

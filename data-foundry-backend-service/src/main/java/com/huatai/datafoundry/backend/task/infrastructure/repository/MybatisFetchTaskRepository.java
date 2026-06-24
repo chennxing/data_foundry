@@ -84,6 +84,23 @@ public class MybatisFetchTaskRepository implements FetchTaskRepository {
   }
 
   @Override
+  public int updateCollectionDispatchResult(
+      String taskId,
+      String status,
+      String collectionTaskId,
+      Integer collectionCreateHttpStatus,
+      String collectionCreateRawResponse,
+      String errorMessage) {
+    return fetchTaskMapper.updateCollectionDispatchResult(
+        taskId,
+        status,
+        collectionTaskId,
+        collectionCreateHttpStatus,
+        collectionCreateRawResponse,
+        errorMessage);
+  }
+
+  @Override
   public int updateStatusIfCurrent(String taskId, String expectedStatus, String status) {
     return fetchTaskMapper.updateStatusIfCurrent(taskId, expectedStatus, status);
   }
@@ -142,8 +159,11 @@ public class MybatisFetchTaskRepository implements FetchTaskRepository {
     task.setRenderedPromptText(record.getRenderedPromptText());
     task.setPromptTemplateSnapshot(record.getPromptTemplateSnapshot());
     task.setCollectionTaskId(record.getCollectionTaskId());
+    task.setCollectionCreateHttpStatus(record.getCollectionCreateHttpStatus());
+    task.setCollectionCreateRawResponse(record.getCollectionCreateRawResponse());
     task.setBusinessDate(record.getBusinessDate());
     task.setStatus(record.getStatus());
+    task.setErrorMessage(record.getErrorMessage());
     task.setCanRerun(record.getCanRerun());
     task.setInvalidatedReason(record.getInvalidatedReason());
     task.setOwner(record.getOwner());
@@ -175,8 +195,11 @@ public class MybatisFetchTaskRepository implements FetchTaskRepository {
     record.setRenderedPromptText(task.getRenderedPromptText());
     record.setPromptTemplateSnapshot(task.getPromptTemplateSnapshot());
     record.setCollectionTaskId(task.getCollectionTaskId());
+    record.setCollectionCreateHttpStatus(task.getCollectionCreateHttpStatus());
+    record.setCollectionCreateRawResponse(task.getCollectionCreateRawResponse());
     record.setBusinessDate(task.getBusinessDate());
     record.setStatus(task.getStatus());
+    record.setErrorMessage(task.getErrorMessage());
     record.setCanRerun(task.getCanRerun());
     record.setInvalidatedReason(task.getInvalidatedReason());
     record.setOwner(task.getOwner());

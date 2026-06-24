@@ -311,7 +311,10 @@ public class TaskAppService {
       }
       Object requestBody = parseRenderedPromptBody(task.getRenderedPromptText());
       if (requestBody == null || collectionSearchGateway == null) {
-        fetchTaskRepository.updateStatus(task.getId(), "failed", null);
+        String errorMessage = requestBody == null
+            ? "invalid rendered prompt request body"
+            : "collection search gateway unavailable";
+        updateCollectionDispatchResult(task, "failed", null, null, null, errorMessage);
         task.setStatus("failed");
         task.setCollectionTaskId(null);
         continue;
@@ -319,15 +322,43 @@ public class TaskAppService {
       CollectionSearchResult result =
           collectionSearchGateway.createSearch(requestBody, prefix + ":" + requestId + ":" + task.getId());
       if (result != null && result.isSuccess() && result.getTaskId() != null) {
-        fetchTaskRepository.updateStatus(task.getId(), "running", result.getTaskId());
+        updateCollectionDispatchResult(
+            task,
+            "running",
+            result.getTaskId(),
+            result.getHttpStatusCode(),
+            result.getRawResponseBody(),
+            null);
         task.setStatus("running");
         task.setCollectionTaskId(result.getTaskId());
       } else {
-        fetchTaskRepository.updateStatus(task.getId(), "failed", null);
+        updateCollectionDispatchResult(
+            task,
+            "failed",
+            null,
+            result != null ? result.getHttpStatusCode() : null,
+            result != null ? result.getRawResponseBody() : null,
+            result != null ? result.getErrorMessage() : "collection search response is empty");
         task.setStatus("failed");
         task.setCollectionTaskId(null);
       }
     }
+  }
+
+  private void updateCollectionDispatchResult(
+      FetchTask task,
+      String status,
+      String collectionTaskId,
+      Integer httpStatus,
+      String rawResponseBody,
+      String errorMessage) {
+    fetchTaskRepository.updateCollectionDispatchResult(
+        task.getId(), status, collectionTaskId, httpStatus, rawResponseBody, errorMessage);
+    task.setStatus(status);
+    task.setCollectionTaskId(collectionTaskId);
+    task.setCollectionCreateHttpStatus(httpStatus);
+    task.setCollectionCreateRawResponse(rawResponseBody);
+    task.setErrorMessage(errorMessage);
   }
 
   private Object parseRenderedPromptBody(String renderedPromptText) {

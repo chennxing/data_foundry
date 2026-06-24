@@ -12,13 +12,17 @@ import org.apache.ibatis.annotations.Update;
 
 @Mapper
 public interface FetchTaskMapper {
+  String FETCH_TASK_COLUMNS =
+      "id, sort_order, requirement_id, wide_table_id, task_group_id, batch_id, row_id, "
+          + "indicator_group_id, indicator_group_name, name, schema_version, execution_mode, "
+          + "indicator_keys_json, dimension_values_json, rendered_prompt_text, prompt_template_snapshot, "
+          + "collection_task_id, collection_create_http_status, collection_create_raw_response, "
+          + "business_date, status, error_message, can_rerun, "
+          + "invalidated_reason, owner, confidence, plan_version, row_binding_key, created_at, updated_at ";
 
   @Select(
       "select "
-          + "id, sort_order, requirement_id, wide_table_id, task_group_id, batch_id, row_id, "
-          + "indicator_group_id, indicator_group_name, name, schema_version, execution_mode, "
-          + "indicator_keys_json, dimension_values_json, rendered_prompt_text, prompt_template_snapshot, collection_task_id, business_date, status, can_rerun, "
-          + "invalidated_reason, owner, confidence, plan_version, row_binding_key, created_at, updated_at "
+          + FETCH_TASK_COLUMNS
           + "from fetch_tasks "
           + "where requirement_id = #{requirementId} "
           + "order by sort_order asc")
@@ -26,20 +30,14 @@ public interface FetchTaskMapper {
 
   @Select(
       "select "
-          + "id, sort_order, requirement_id, wide_table_id, task_group_id, batch_id, row_id, "
-          + "indicator_group_id, indicator_group_name, name, schema_version, execution_mode, "
-          + "indicator_keys_json, dimension_values_json, rendered_prompt_text, prompt_template_snapshot, collection_task_id, business_date, status, can_rerun, "
-          + "invalidated_reason, owner, confidence, plan_version, row_binding_key, created_at, updated_at "
+          + FETCH_TASK_COLUMNS
           + "from fetch_tasks "
           + "order by requirement_id asc, sort_order asc")
   List<FetchTaskRecord> listAll();
 
   @Select(
       "select "
-          + "id, sort_order, requirement_id, wide_table_id, task_group_id, batch_id, row_id, "
-          + "indicator_group_id, indicator_group_name, name, schema_version, execution_mode, "
-          + "indicator_keys_json, dimension_values_json, rendered_prompt_text, prompt_template_snapshot, collection_task_id, business_date, status, can_rerun, "
-          + "invalidated_reason, owner, confidence, plan_version, row_binding_key, created_at, updated_at "
+          + FETCH_TASK_COLUMNS
           + "from fetch_tasks "
           + "where wide_table_id = #{wideTableId} "
           + "order by sort_order asc")
@@ -47,10 +45,7 @@ public interface FetchTaskMapper {
 
   @Select(
       "select "
-          + "id, sort_order, requirement_id, wide_table_id, task_group_id, batch_id, row_id, "
-          + "indicator_group_id, indicator_group_name, name, schema_version, execution_mode, "
-          + "indicator_keys_json, dimension_values_json, rendered_prompt_text, prompt_template_snapshot, collection_task_id, business_date, status, can_rerun, "
-          + "invalidated_reason, owner, confidence, plan_version, row_binding_key, created_at, updated_at "
+          + FETCH_TASK_COLUMNS
           + "from fetch_tasks "
           + "where task_group_id = #{taskGroupId} "
           + "order by sort_order asc")
@@ -58,10 +53,7 @@ public interface FetchTaskMapper {
 
   @Select(
       "select "
-          + "id, sort_order, requirement_id, wide_table_id, task_group_id, batch_id, row_id, "
-          + "indicator_group_id, indicator_group_name, name, schema_version, execution_mode, "
-          + "indicator_keys_json, dimension_values_json, rendered_prompt_text, prompt_template_snapshot, collection_task_id, business_date, status, can_rerun, "
-          + "invalidated_reason, owner, confidence, plan_version, row_binding_key, created_at, updated_at "
+          + FETCH_TASK_COLUMNS
           + "from fetch_tasks "
           + "where id = #{id} "
           + "limit 1")
@@ -69,10 +61,7 @@ public interface FetchTaskMapper {
 
   @Select(
       "select "
-          + "id, sort_order, requirement_id, wide_table_id, task_group_id, batch_id, row_id, "
-          + "indicator_group_id, indicator_group_name, name, schema_version, execution_mode, "
-          + "indicator_keys_json, dimension_values_json, rendered_prompt_text, prompt_template_snapshot, collection_task_id, business_date, status, can_rerun, "
-          + "invalidated_reason, owner, confidence, plan_version, row_binding_key, created_at, updated_at "
+          + FETCH_TASK_COLUMNS
           + "from fetch_tasks "
           + "where collection_task_id = #{collectionTaskId} "
           + "limit 1")
@@ -89,13 +78,15 @@ public interface FetchTaskMapper {
       "insert into fetch_tasks (",
       "  id, sort_order, requirement_id, wide_table_id, task_group_id, batch_id, row_id,",
       "  indicator_group_id, indicator_group_name, name, schema_version, execution_mode,",
-      "  indicator_keys_json, dimension_values_json, rendered_prompt_text, prompt_template_snapshot, collection_task_id, business_date, status, can_rerun,",
+      "  indicator_keys_json, dimension_values_json, rendered_prompt_text, prompt_template_snapshot, collection_task_id,",
+      "  collection_create_http_status, collection_create_raw_response, business_date, status, error_message, can_rerun,",
       "  invalidated_reason, owner, confidence, plan_version, row_binding_key",
       ") values ",
       "  <foreach collection='records' item='r' separator=','>",
       "    (#{r.id}, #{r.sortOrder}, #{r.requirementId}, #{r.wideTableId}, #{r.taskGroupId}, #{r.batchId}, #{r.rowId},",
       "     #{r.indicatorGroupId}, #{r.indicatorGroupName}, #{r.name}, #{r.schemaVersion}, #{r.executionMode},",
-      "     #{r.indicatorKeysJson}, #{r.dimensionValuesJson}, #{r.renderedPromptText}, #{r.promptTemplateSnapshot}, #{r.collectionTaskId}, #{r.businessDate}, #{r.status}, #{r.canRerun},",
+      "     #{r.indicatorKeysJson}, #{r.dimensionValuesJson}, #{r.renderedPromptText}, #{r.promptTemplateSnapshot}, #{r.collectionTaskId},",
+      "     #{r.collectionCreateHttpStatus}, #{r.collectionCreateRawResponse}, #{r.businessDate}, #{r.status}, #{r.errorMessage}, #{r.canRerun},",
       "     #{r.invalidatedReason}, #{r.owner}, #{r.confidence}, #{r.planVersion}, #{r.rowBindingKey})",
       "  </foreach>",
       "on duplicate key update ",
@@ -108,6 +99,9 @@ public interface FetchTaskMapper {
       "  prompt_template_snapshot = values(prompt_template_snapshot),",
       "  dimension_values_json = values(dimension_values_json),",
       "  collection_task_id = coalesce(values(collection_task_id), collection_task_id),",
+      "  collection_create_http_status = values(collection_create_http_status),",
+      "  collection_create_raw_response = values(collection_create_raw_response),",
+      "  error_message = values(error_message),",
       "  confidence = values(confidence),",
       "  can_rerun = values(can_rerun),",
       "  invalidated_reason = values(invalidated_reason),",
@@ -132,6 +126,23 @@ public interface FetchTaskMapper {
           + "where id = #{id}")
   int updateStatusAndCollectionTaskId(
       @Param("id") String id, @Param("status") String status, @Param("collectionTaskId") String collectionTaskId);
+
+  @Update(
+      "update fetch_tasks "
+          + "set status = #{status}, "
+          + "collection_task_id = #{collectionTaskId}, "
+          + "collection_create_http_status = #{collectionCreateHttpStatus}, "
+          + "collection_create_raw_response = #{collectionCreateRawResponse}, "
+          + "error_message = #{errorMessage}, "
+          + "updated_at = current_timestamp "
+          + "where id = #{id}")
+  int updateCollectionDispatchResult(
+      @Param("id") String id,
+      @Param("status") String status,
+      @Param("collectionTaskId") String collectionTaskId,
+      @Param("collectionCreateHttpStatus") Integer collectionCreateHttpStatus,
+      @Param("collectionCreateRawResponse") String collectionCreateRawResponse,
+      @Param("errorMessage") String errorMessage);
 
   @Update(
       "update fetch_tasks "

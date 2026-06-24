@@ -324,9 +324,8 @@ public class TaskPlanAppService {
       // Conservative fallback: the gateway is unavailable in this deployment.
       for (FetchTask task : fetchTasks) {
         if (task == null || task.getId() == null) continue;
-        fetchTaskRepository.updateStatus(task.getId(), "failed", null);
-        task.setStatus("failed");
-        task.setCollectionTaskId(null);
+        updateCollectionDispatchResult(
+            task, "failed", null, null, null, "collection search gateway unavailable");
       }
       return "failed";
     }
@@ -347,18 +346,42 @@ public class TaskPlanAppService {
           body != null ? collectionSearchGateway.createSearch(body, "trial-run-search:" + task.getId()) : null;
       if (resp != null && resp.isSuccess() && resp.getTaskId() != null && !resp.getTaskId().trim().isEmpty()) {
         String downstreamTaskId = resp.getTaskId().trim();
-        fetchTaskRepository.updateStatus(task.getId(), "running", downstreamTaskId);
-        task.setStatus("running");
-        task.setCollectionTaskId(downstreamTaskId);
+        updateCollectionDispatchResult(
+            task,
+            "running",
+            downstreamTaskId,
+            resp.getHttpStatusCode(),
+            resp.getRawResponseBody(),
+            null);
         anyRunning = true;
       } else {
-        fetchTaskRepository.updateStatus(task.getId(), "failed", null);
-        task.setStatus("failed");
-        task.setCollectionTaskId(null);
+        updateCollectionDispatchResult(
+            task,
+            "failed",
+            null,
+            resp != null ? resp.getHttpStatusCode() : null,
+            resp != null ? resp.getRawResponseBody() : null,
+            resp != null ? resp.getErrorMessage() : "invalid rendered prompt request body");
       }
     }
 
     return anyRunning ? "running" : "failed";
+  }
+
+  private void updateCollectionDispatchResult(
+      FetchTask task,
+      String status,
+      String collectionTaskId,
+      Integer httpStatus,
+      String rawResponseBody,
+      String errorMessage) {
+    fetchTaskRepository.updateCollectionDispatchResult(
+        task.getId(), status, collectionTaskId, httpStatus, rawResponseBody, errorMessage);
+    task.setStatus(status);
+    task.setCollectionTaskId(collectionTaskId);
+    task.setCollectionCreateHttpStatus(httpStatus);
+    task.setCollectionCreateRawResponse(rawResponseBody);
+    task.setErrorMessage(errorMessage);
   }
 
   private void applyTrialRunGroupStatus(List<TaskGroup> taskGroups, List<FetchTask> fetchTasks) {

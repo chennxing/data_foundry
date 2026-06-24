@@ -44,38 +44,46 @@ public class CollectionSearchClient implements CollectionSearchGateway {
     }
 
     try {
-      ResponseEntity<Map> response =
+      ResponseEntity<String> response =
           restTemplate.exchange(
               URI.create(baseUrl + "/api/search"),
               HttpMethod.POST,
               new HttpEntity<Object>(requestBody, headers),
-              Map.class);
+              String.class);
+      String rawBody = response.getBody();
+      Integer httpStatusCode = response.getStatusCode() != null ? response.getStatusCode().value() : null;
 
       if (!response.getStatusCode().is2xxSuccessful()) {
-        return new CollectionSearchResult(false, null, "non-2xx: " + response.getStatusCode());
+        return new CollectionSearchResult(
+            false, null, "non-2xx: " + response.getStatusCode(), httpStatusCode, rawBody);
       }
 
-      Map raw = response.getBody();
+      Map raw = rawBody != null ? objectMapper.readValue(rawBody, Map.class) : null;
       if (raw == null) {
-        return new CollectionSearchResult(false, null, "empty response body");
+        return new CollectionSearchResult(false, null, "empty response body", httpStatusCode, rawBody);
       }
 
       Object success = raw.get("success");
       if (!(success instanceof Boolean) || !((Boolean) success).booleanValue()) {
         Object detail = raw.get("detail");
-        return new CollectionSearchResult(false, null, detail != null ? String.valueOf(detail) : "success=false");
+        return new CollectionSearchResult(
+            false,
+            null,
+            detail != null ? String.valueOf(detail) : "success=false",
+            httpStatusCode,
+            rawBody);
       }
 
       Object data = raw.get("data");
       if (!(data instanceof Map)) {
-        return new CollectionSearchResult(false, null, "missing data");
+        return new CollectionSearchResult(false, null, "missing data", httpStatusCode, rawBody);
       }
       Object taskId = ((Map) data).get("task_id");
       String tid = taskId != null ? String.valueOf(taskId).trim() : "";
       if (tid.isEmpty()) {
-        return new CollectionSearchResult(false, null, "missing task_id");
+        return new CollectionSearchResult(false, null, "missing task_id", httpStatusCode, rawBody);
       }
-      return new CollectionSearchResult(true, tid, null);
+      return new CollectionSearchResult(true, tid, null, httpStatusCode, rawBody);
     } catch (HttpStatusCodeException ex) {
       HttpStatus status;
       try {
@@ -83,8 +91,9 @@ public class CollectionSearchClient implements CollectionSearchGateway {
       } catch (Exception ignored) {
         status = HttpStatus.SERVICE_UNAVAILABLE;
       }
-      String detail = safeSnippet(ex.getResponseBodyAsString());
-      return new CollectionSearchResult(false, null, "http " + status.value() + detail);
+      String rawBody = ex.getResponseBodyAsString();
+      String detail = safeSnippet(rawBody);
+      return new CollectionSearchResult(false, null, "http " + status.value() + detail, status.value(), rawBody);
     } catch (RestClientException ex) {
       return new CollectionSearchResult(false, null, "unavailable: " + ex.getMessage());
     } catch (Exception ex) {

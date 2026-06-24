@@ -21,8 +21,11 @@ public class FetchTaskRecord {
   private String renderedPromptText;
   private String promptTemplateSnapshot;
   private String collectionTaskId;
+  private Integer collectionCreateHttpStatus;
+  private String collectionCreateRawResponse;
   private String businessDate;
   private String status;
+  private String errorMessage;
   private Boolean canRerun;
   private String invalidatedReason;
   private String owner;
@@ -168,6 +171,22 @@ public class FetchTaskRecord {
     this.collectionTaskId = collectionTaskId;
   }
 
+  public Integer getCollectionCreateHttpStatus() {
+    return collectionCreateHttpStatus;
+  }
+
+  public void setCollectionCreateHttpStatus(Integer collectionCreateHttpStatus) {
+    this.collectionCreateHttpStatus = collectionCreateHttpStatus;
+  }
+
+  public String getCollectionCreateRawResponse() {
+    return collectionCreateRawResponse;
+  }
+
+  public void setCollectionCreateRawResponse(String collectionCreateRawResponse) {
+    this.collectionCreateRawResponse = collectionCreateRawResponse;
+  }
+
   public String getBusinessDate() {
     return businessDate;
   }
@@ -182,6 +201,14 @@ public class FetchTaskRecord {
 
   public void setStatus(String status) {
     this.status = status;
+  }
+
+  public String getErrorMessage() {
+    return errorMessage;
+  }
+
+  public void setErrorMessage(String errorMessage) {
+    this.errorMessage = errorMessage;
   }
 
   public Boolean getCanRerun() {
