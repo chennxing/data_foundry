@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { updateRequirementWideTable } from "@/lib/api-client";
+import { parsePromptYaml, updateRequirementWideTable } from "@/lib/api-client";
 import type { IndicatorGroup, Requirement, WideTable } from "@/lib/types";
 import {
   buildIndicatorGroupPrompt,
@@ -38,11 +38,15 @@ export default function usePromptEditor({
 }: Props) {
   const [promptSaveMessage, setPromptSaveMessage] = useState("");
   const [isPersistingPrompts, setIsPersistingPrompts] = useState(false);
+  const [promptYamlImportMessage, setPromptYamlImportMessage] = useState("");
+  const [importingPromptYamlGroupId, setImportingPromptYamlGroupId] = useState<string | null>(null);
   const [promptEditorModes, setPromptEditorModes] = useState<Record<string, PromptEditorMode>>({});
   const [promptMarkdownDrafts, setPromptMarkdownDrafts] = useState<Record<string, string>>({});
 
   useEffect(() => {
     setPromptSaveMessage("");
+    setPromptYamlImportMessage("");
+    setImportingPromptYamlGroupId(null);
     setPromptEditorModes({});
     setPromptMarkdownDrafts({});
   }, [selectedWt?.id]);
@@ -172,13 +176,50 @@ export default function usePromptEditor({
     }
   };
 
+  const handlePromptYamlImport = async (groupId: string, file: File) => {
+    if (!isDefinitionSubmitted) {
+      setPromptYamlImportMessage("请先在【需求】Tab 提交需求后再导入 YAML。");
+      return;
+    }
+
+    const fileName = file.name.toLowerCase();
+    if (!fileName.endsWith(".yaml") && !fileName.endsWith(".yml")) {
+      setPromptYamlImportMessage("仅支持导入 .yaml 或 .yml 文件。");
+      return;
+    }
+    if (file.size > 1024 * 1024) {
+      setPromptYamlImportMessage("YAML 文件不能超过 1MB。");
+      return;
+    }
+
+    setImportingPromptYamlGroupId(groupId);
+    setPromptYamlImportMessage("");
+    try {
+      const payload = await parsePromptYaml(file);
+      const importedPrompt = JSON.stringify(payload, null, 2);
+      setPromptEditorModes((current) => ({ ...current, [groupId]: "markdown" }));
+      setPromptMarkdownDrafts((current) => ({
+        ...current,
+        [groupId]: importedPrompt,
+      }));
+      setPromptYamlImportMessage("已导入 YAML 并生成标准采集入参，请确认内容后保存提示词。");
+    } catch (error) {
+      setPromptYamlImportMessage(`导入失败：${formatTaskActionError(error)}`);
+    } finally {
+      setImportingPromptYamlGroupId(null);
+    }
+  };
+
   return {
     promptSaveMessage,
     isPersistingPrompts,
+    promptYamlImportMessage,
+    importingPromptYamlGroupId,
     promptEditorModes,
     promptMarkdownDrafts,
     handleIndicatorGroupPromptSectionChange,
     handlePersistPromptTemplates,
+    handlePromptYamlImport,
     handleMarkdownModeSelect: (groupId: string, fallbackMarkdown: string) => {
       setPromptEditorModes((current) => ({ ...current, [groupId]: "markdown" }));
       setPromptMarkdownDrafts((current) => ({

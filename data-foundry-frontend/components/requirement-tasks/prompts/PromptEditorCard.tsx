@@ -1,6 +1,7 @@
 "use client";
 
-import { ChevronRight } from "lucide-react";
+import { useRef } from "react";
+import { ChevronRight, Upload } from "lucide-react";
 import type { IndicatorGroup } from "@/lib/types";
 import type {
   IndicatorGroupPromptBundle,
@@ -24,7 +25,9 @@ type Props = {
   shouldOpen: boolean;
   onMarkdownModeSelect: () => void;
   onMarkdownDraftChange: (value: string) => void;
+  onPromptYamlImport: (file: File) => void;
   onSectionChange: (sectionKey: PromptSectionKey, value: string) => void;
+  isImportingPromptYaml: boolean;
 };
 
 export default function PromptEditorCard({
@@ -37,8 +40,12 @@ export default function PromptEditorCard({
   shouldOpen,
   onMarkdownModeSelect,
   onMarkdownDraftChange,
+  onPromptYamlImport,
   onSectionChange,
+  isImportingPromptYaml,
 }: Props) {
+  const yamlInputRef = useRef<HTMLInputElement | null>(null);
+
   return (
     <details
       open={shouldOpen}
@@ -87,6 +94,33 @@ export default function PromptEditorCard({
             >
               整体 Markdown
             </button>
+            <button
+              type="button"
+              disabled={!isPromptEditable || isImportingPromptYaml}
+              onClick={() => yamlInputRef.current?.click()}
+              className={cn(
+                "inline-flex items-center gap-1 rounded-md border px-2.5 py-1 text-[11px]",
+                !isPromptEditable || isImportingPromptYaml
+                  ? "cursor-not-allowed text-muted-foreground opacity-70"
+                  : "text-primary hover:bg-primary/5",
+              )}
+            >
+              <Upload className="h-3.5 w-3.5" />
+              {isImportingPromptYaml ? "导入中..." : "导入 YAML"}
+            </button>
+            <input
+              ref={yamlInputRef}
+              type="file"
+              accept=".yaml,.yml"
+              className="hidden"
+              onChange={(event) => {
+                const file = event.target.files?.[0];
+                event.target.value = "";
+                if (file) {
+                  onPromptYamlImport(file);
+                }
+              }}
+            />
           </div>
         </div>
 

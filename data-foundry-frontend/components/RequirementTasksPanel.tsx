@@ -493,10 +493,13 @@ export default function RequirementTasksPanel({
   const {
     promptSaveMessage,
     isPersistingPrompts,
+    promptYamlImportMessage,
+    importingPromptYamlGroupId,
     promptEditorModes,
     promptMarkdownDrafts,
     handleIndicatorGroupPromptSectionChange,
     handlePersistPromptTemplates,
+    handlePromptYamlImport,
     handleMarkdownModeSelect,
     handleMarkdownDraftChange,
     buildWideTableWithPromptDrafts,
@@ -1126,6 +1129,8 @@ export default function RequirementTasksPanel({
           taskPlanBlockerMessage={taskPlanBlockerMessage}
           promptSaveMessage={promptSaveMessage}
           isPersistingPrompts={isPersistingPrompts}
+          promptYamlImportMessage={promptYamlImportMessage}
+          importingPromptYamlGroupId={importingPromptYamlGroupId}
           promptEditorGroups={promptEditorGroups}
           indicatorGroupPromptMap={indicatorGroupPromptMap}
           promptEditorModes={promptEditorModes}
@@ -1137,6 +1142,7 @@ export default function RequirementTasksPanel({
           onOpenTrialModal={openTrialModal}
           onMarkdownModeSelect={handleMarkdownModeSelect}
           onMarkdownDraftChange={handleMarkdownDraftChange}
+          onPromptYamlImport={(groupId, file) => void handlePromptYamlImport(groupId, file)}
           onIndicatorGroupPromptSectionChange={(groupId, key, value) => (
             handleIndicatorGroupPromptSectionChange(groupId, key, value)
           )}

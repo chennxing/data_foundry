@@ -202,6 +202,48 @@ function apiDelete(path: string) {
   return apiFetch<void>(path, { method: "DELETE" });
 }
 
+export type CollectionPromptPayload = {
+  query: string;
+  background: string;
+  user_id: string;
+  max_iterations: number;
+  require_schema_approval: boolean;
+};
+
+export async function parsePromptYaml(file: File): Promise<CollectionPromptPayload> {
+  const formData = new FormData();
+  formData.append("file", file);
+
+  const headers = new Headers();
+  const token = loadAuthToken();
+  if (token) {
+    headers.set("Authorization", `Bearer ${token}`);
+  }
+
+  const res = await fetch(buildApiUrl("/api/prompt-templates/parse-yaml"), {
+    method: "POST",
+    headers,
+    body: formData,
+  });
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    let detail = "";
+    if (text.trim() !== "") {
+      try {
+        const parsed = JSON.parse(text);
+        detail = parsed?.detail ?? parsed?.message ?? parsed?.error ?? "";
+      } catch {
+        detail = text;
+      }
+    }
+    throw new Error(detail && String(detail).trim() !== "" ? String(detail).trim() : `API ${res.status}: ${text}`);
+  }
+
+  const raw = await res.json();
+  return (raw?.data ?? raw) as CollectionPromptPayload;
+}
+
 function resolveDownloadFileName(contentDisposition: string | null, fallbackName: string): string {
   if (!contentDisposition) {
     return fallbackName;

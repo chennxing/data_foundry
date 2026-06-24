@@ -43,6 +43,8 @@ type Props = {
   taskPlanBlockerMessage: string | null;
   promptSaveMessage: string | null;
   isPersistingPrompts: boolean;
+  promptYamlImportMessage: string | null;
+  importingPromptYamlGroupId: string | null;
   promptEditorGroups: IndicatorGroup[];
   indicatorGroupPromptMap: Map<string, IndicatorGroupPromptBundle>;
   promptEditorModes: Record<string, PromptEditorMode>;
@@ -54,6 +56,7 @@ type Props = {
   onOpenTrialModal: () => void;
   onMarkdownModeSelect: (groupId: string, fallbackMarkdown: string) => void;
   onMarkdownDraftChange: (groupId: string, value: string) => void;
+  onPromptYamlImport: (groupId: string, file: File) => void;
   onIndicatorGroupPromptSectionChange: (
     groupId: string,
     key: PromptSectionKey,
@@ -79,6 +82,8 @@ export default function PromptManagementTab({
   taskPlanBlockerMessage,
   promptSaveMessage,
   isPersistingPrompts,
+  promptYamlImportMessage,
+  importingPromptYamlGroupId,
   promptEditorGroups,
   indicatorGroupPromptMap,
   promptEditorModes,
@@ -90,6 +95,7 @@ export default function PromptManagementTab({
   onOpenTrialModal,
   onMarkdownModeSelect,
   onMarkdownDraftChange,
+  onPromptYamlImport,
   onIndicatorGroupPromptSectionChange,
 }: Props) {
   return (
@@ -278,6 +284,12 @@ export default function PromptManagementTab({
           </div>
         ) : null}
 
+        {promptYamlImportMessage ? (
+          <div className="rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-900">
+            {promptYamlImportMessage}
+          </div>
+        ) : null}
+
         {!hasIndicatorColumns ? (
           <div className="rounded-lg border border-dashed bg-background px-4 py-8 text-center text-sm text-muted-foreground">
             当前宽表没有指标列，暂不需要配置采集提示词。
@@ -310,9 +322,11 @@ export default function PromptManagementTab({
                     shouldOpen={shouldOpen}
                     onMarkdownModeSelect={() => onMarkdownModeSelect(group.id, group.promptTemplate ?? promptBundle.markdown)}
                     onMarkdownDraftChange={(value) => onMarkdownDraftChange(group.id, value)}
+                    onPromptYamlImport={(file) => onPromptYamlImport(group.id, file)}
                     onSectionChange={(sectionKey, value) => (
                       onIndicatorGroupPromptSectionChange(group.id, sectionKey, value)
                     )}
+                    isImportingPromptYaml={importingPromptYamlGroupId === group.id}
                   />
                 );
               })}
