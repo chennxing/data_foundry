@@ -3,6 +3,7 @@ package com.huatai.datafoundry.backend.task.application.service;
 import com.huatai.datafoundry.backend.task.domain.model.FetchTask;
 import com.huatai.datafoundry.backend.task.domain.model.TaskGroup;
 import com.huatai.datafoundry.backend.task.domain.model.TaskStatus;
+import com.huatai.datafoundry.backend.schedule.domain.repository.ScheduleRuleRepository;
 import com.huatai.datafoundry.backend.task.domain.repository.FetchTaskRepository;
 import com.huatai.datafoundry.backend.task.domain.repository.TaskGroupRepository;
 import java.time.LocalDateTime;
@@ -17,12 +18,15 @@ import org.springframework.stereotype.Service;
 public class TaskGroupAggregateService {
   private final TaskGroupRepository taskGroupRepository;
   private final FetchTaskRepository fetchTaskRepository;
+  private final ScheduleRuleRepository scheduleRuleRepository;
 
   public TaskGroupAggregateService(
       TaskGroupRepository taskGroupRepository,
-      FetchTaskRepository fetchTaskRepository) {
+      FetchTaskRepository fetchTaskRepository,
+      ScheduleRuleRepository scheduleRuleRepository) {
     this.taskGroupRepository = taskGroupRepository;
     this.fetchTaskRepository = fetchTaskRepository;
+    this.scheduleRuleRepository = scheduleRuleRepository;
   }
 
   public TaskGroup refreshTaskGroup(String taskGroupId) {
@@ -61,6 +65,7 @@ public class TaskGroupAggregateService {
   }
 
   private TaskGroup recomputeAndPersist(TaskGroup taskGroup) {
+    String previousStatus = normalize(taskGroup.getStatus());
     List<FetchTask> tasks = fetchTaskRepository.listByTaskGroup(taskGroup.getId());
     int existingTotal = safeInt(taskGroup.getTotalTasks());
     int totalTasks = (tasks == null || tasks.isEmpty()) ? existingTotal : tasks.size();
@@ -110,7 +115,22 @@ public class TaskGroupAggregateService {
         invalidatedTasks));
     taskGroup.setLastAggregatedAt(LocalDateTime.now());
     taskGroupRepository.upsert(taskGroup);
+    markScheduleRulePendingIfNeeded(taskGroup, previousStatus);
     return taskGroup;
+  }
+
+  private void markScheduleRulePendingIfNeeded(TaskGroup taskGroup, String previousStatus) {
+    if (scheduleRuleRepository == null || taskGroup == null) {
+      return;
+    }
+    String scheduleRuleId = trimToNull(taskGroup.getScheduleRuleId());
+    if (scheduleRuleId == null) {
+      return;
+    }
+    String currentStatus = normalize(taskGroup.getStatus());
+    if (!safeEquals(previousStatus, currentStatus) || !TaskStatus.PENDING.equals(currentStatus)) {
+      scheduleRuleRepository.markXxlSyncPending(scheduleRuleId);
+    }
   }
 
   private String resolveTaskGroupStatus(
@@ -160,5 +180,17 @@ public class TaskGroupAggregateService {
     }
     String normalized = raw.trim().toLowerCase();
     return normalized.isEmpty() ? null : normalized;
+  }
+
+  private String trimToNull(String raw) {
+    if (raw == null) {
+      return null;
+    }
+    String trimmed = raw.trim();
+    return trimmed.isEmpty() ? null : trimmed;
+  }
+
+  private boolean safeEquals(String left, String right) {
+    return left == null ? right == null : left.equals(right);
   }
 }

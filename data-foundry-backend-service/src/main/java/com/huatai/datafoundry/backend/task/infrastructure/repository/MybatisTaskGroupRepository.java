@@ -44,6 +44,11 @@ public class MybatisTaskGroupRepository implements TaskGroupRepository {
   }
 
   @Override
+  public boolean existsPendingScheduledTaskGroupWithFetchTasks(String scheduleRuleId) {
+    return taskGroupMapper.countPendingScheduledTaskGroupsWithFetchTasks(scheduleRuleId) > 0;
+  }
+
+  @Override
   public List<TaskGroup> listAll() {
     return toDomainList(taskGroupMapper.listAll());
   }

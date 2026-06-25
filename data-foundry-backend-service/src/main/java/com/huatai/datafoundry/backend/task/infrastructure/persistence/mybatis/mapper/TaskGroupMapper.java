@@ -78,6 +78,16 @@ public interface TaskGroupMapper {
   TaskGroupRecord findNextPendingByScheduleRule(
       @Param("scheduleRuleId") String scheduleRuleId);
 
+  @Select(
+      "select count(1) from task_groups tg "
+          + "where tg.schedule_rule_id = #{scheduleRuleId} "
+          + "and lower(tg.source_type) = 'scheduled' "
+          + "and lower(tg.status) = 'pending' "
+          + "and tg.scheduled_at is not null "
+          + "and coalesce(tg.total_tasks, 0) > 0 "
+          + "and exists (select 1 from fetch_tasks ft where ft.task_group_id = tg.id limit 1)")
+  int countPendingScheduledTaskGroupsWithFetchTasks(@Param("scheduleRuleId") String scheduleRuleId);
+
   @Select({
       "<script>",
       "select ",

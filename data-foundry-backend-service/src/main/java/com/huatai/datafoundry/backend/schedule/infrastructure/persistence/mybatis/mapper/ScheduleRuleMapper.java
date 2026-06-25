@@ -122,6 +122,19 @@ public interface ScheduleRuleMapper {
       @Param("triggerStatus") String triggerStatus);
 
   @Update(
+      "update schedule_rules set xxl_sync_status = 'PENDING_SYNC', "
+          + "xxl_last_error_message = null, updated_at = current_timestamp "
+          + "where id = #{id}")
+  int markXxlSyncPending(@Param("id") String id);
+
+  @Update(
+      "update schedule_rules set xxl_sync_status = 'PENDING_SYNC', "
+          + "xxl_last_error_message = null, updated_at = current_timestamp "
+          + "where requirement_id = #{requirementId} and wide_table_id = #{wideTableId}")
+  int markXxlSyncPendingByWideTable(
+      @Param("requirementId") String requirementId, @Param("wideTableId") String wideTableId);
+
+  @Update(
       "update schedule_rules set xxl_sync_status = 'SYNCING', "
           + "xxl_last_error_message = null, updated_at = current_timestamp "
           + "where id = #{id} and "

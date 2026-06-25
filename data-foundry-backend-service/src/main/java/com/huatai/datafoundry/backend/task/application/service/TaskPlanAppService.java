@@ -5,6 +5,7 @@ import com.huatai.datafoundry.backend.requirement.application.query.dto.WideTabl
 import com.huatai.datafoundry.backend.requirement.application.query.service.WideTableRowQueryService;
 import com.huatai.datafoundry.backend.schedule.application.service.ScheduleRuleSyncAppService;
 import com.huatai.datafoundry.backend.schedule.domain.model.ScheduleRule;
+import com.huatai.datafoundry.backend.schedule.domain.repository.ScheduleRuleRepository;
 import com.huatai.datafoundry.backend.schedule.domain.service.SchedulePlanningTimeCalculator;
 import com.huatai.datafoundry.backend.task.domain.model.FetchTask;
 import com.huatai.datafoundry.backend.task.domain.model.TaskGroup;
@@ -54,6 +55,7 @@ public class TaskPlanAppService {
   private final TargetTableQueryService targetTableQueryService;
   private final WideTableRowQueryService wideTableRowQueryService;
   private final ScheduleRuleSyncAppService scheduleRuleSyncAppService;
+  private final ScheduleRuleRepository scheduleRuleRepository;
   private final SchedulePlanningTimeCalculator schedulePlanningTimeCalculator;
   private final ObjectMapper objectMapper;
 
@@ -79,6 +81,7 @@ public class TaskPlanAppService {
         null,
         null,
         null,
+        null,
         objectMapper);
   }
 
@@ -92,6 +95,7 @@ public class TaskPlanAppService {
       TargetTableQueryService targetTableQueryService,
       WideTableRowQueryService wideTableRowQueryService,
       ScheduleRuleSyncAppService scheduleRuleSyncAppService,
+      ScheduleRuleRepository scheduleRuleRepository,
       SchedulePlanningTimeCalculator schedulePlanningTimeCalculator,
       ObjectMapper objectMapper) {
     this.wideTableReadRepository = wideTableReadRepository;
@@ -102,6 +106,7 @@ public class TaskPlanAppService {
     this.targetTableQueryService = targetTableQueryService;
     this.wideTableRowQueryService = wideTableRowQueryService;
     this.scheduleRuleSyncAppService = scheduleRuleSyncAppService;
+    this.scheduleRuleRepository = scheduleRuleRepository;
     this.schedulePlanningTimeCalculator = schedulePlanningTimeCalculator;
     this.objectMapper = objectMapper;
   }
@@ -431,11 +436,13 @@ public class TaskPlanAppService {
         scheduleRuleSyncAppService.sync(wideTable);
       }
       invalidateMissingPendingTaskGroups(requirementId, wideTableId, Collections.<String>emptySet());
+      markWideTableRulesPending(requirementId, wideTableId);
       return;
     }
     Scope scope = parseScope(wideTable.getScopeJson());
     List<String> businessDates = taskPlanDomainService.buildBusinessDates(scope);
     if (businessDates.isEmpty()) {
+      markWideTableRulesPending(requirementId, wideTableId);
       return;
     }
     ScheduleFrequency frequency = ScheduleFrequency.parse(normalizeFrequency(scope.frequency));
@@ -672,6 +679,14 @@ public class TaskPlanAppService {
     if (invalidateMissing) {
       invalidateMissingPendingTaskGroups(requirementId, wideTableId, idSet);
     }
+    markWideTableRulesPending(requirementId, wideTableId);
+  }
+
+  private void markWideTableRulesPending(String requirementId, String wideTableId) {
+    if (scheduleRuleRepository == null) {
+      return;
+    }
+    scheduleRuleRepository.markXxlSyncPendingByWideTable(requirementId, wideTableId);
   }
 
   private void invalidateMissingPendingTaskGroups(String requirementId, String wideTableId, Set<String> keepIds) {

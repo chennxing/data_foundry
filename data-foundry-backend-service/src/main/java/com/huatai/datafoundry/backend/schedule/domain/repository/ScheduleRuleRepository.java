@@ -24,6 +24,10 @@ public interface ScheduleRuleRepository {
 
   int updateExecutionStatus(String id, LocalDateTime successTime, String triggerStatus);
 
+  int markXxlSyncPending(String id);
+
+  int markXxlSyncPendingByWideTable(String requirementId, String wideTableId);
+
   int markXxlSyncing(String id);
 
   int markXxlSynced(

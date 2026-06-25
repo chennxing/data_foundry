@@ -10,6 +10,7 @@ import static org.mockito.Mockito.when;
 
 import com.huatai.datafoundry.backend.schedule.domain.model.ScheduleRule;
 import com.huatai.datafoundry.backend.schedule.domain.repository.ScheduleRuleRepository;
+import com.huatai.datafoundry.backend.task.domain.repository.TaskGroupRepository;
 import com.huatai.datafoundry.contract.scheduler.XxlJobRuleSyncCommand;
 import com.huatai.datafoundry.contract.scheduler.XxlJobRuleSyncResult;
 import java.time.LocalDateTime;
@@ -22,12 +23,14 @@ import org.mockito.Mockito;
 
 class ScheduleRuleXxlSyncStateAppServiceTest {
   private ScheduleRuleRepository repository;
+  private TaskGroupRepository taskGroupRepository;
   private ScheduleRuleXxlSyncStateAppService service;
 
   @BeforeEach
   void setUp() {
     repository = Mockito.mock(ScheduleRuleRepository.class);
-    service = new ScheduleRuleXxlSyncStateAppService(repository);
+    taskGroupRepository = Mockito.mock(TaskGroupRepository.class);
+    service = new ScheduleRuleXxlSyncStateAppService(repository, taskGroupRepository);
   }
 
   @Test
@@ -37,6 +40,8 @@ class ScheduleRuleXxlSyncStateAppServiceTest {
     when(repository.listPendingXxlSync(20))
         .thenReturn(Collections.singletonList(rule));
     when(repository.markXxlSyncing("rule-1")).thenReturn(1);
+    when(taskGroupRepository.existsPendingScheduledTaskGroupWithFetchTasks("rule-1"))
+        .thenReturn(true);
 
     List<XxlJobRuleSyncCommand> commands = service.claimPending(Integer.valueOf(20));
 
@@ -47,6 +52,23 @@ class ScheduleRuleXxlSyncStateAppServiceTest {
     assertEquals("0 30 8 * * ?", command.getCronExpression());
     assertEquals("101", command.getExistingJobId());
     assertEquals("hash-1", command.getSyncHash());
+    assertEquals(Boolean.TRUE, command.getEnabled());
+  }
+
+  @Test
+  void disablesXxlJobWhenRuleHasNoPendingScheduledTaskGroups() {
+    ScheduleRule rule = rule(true, "PENDING_SYNC");
+    rule.setXxlJobId("101");
+    when(repository.listPendingXxlSync(20))
+        .thenReturn(Collections.singletonList(rule));
+    when(repository.markXxlSyncing("rule-1")).thenReturn(1);
+    when(taskGroupRepository.existsPendingScheduledTaskGroupWithFetchTasks("rule-1"))
+        .thenReturn(false);
+
+    List<XxlJobRuleSyncCommand> commands = service.claimPending(Integer.valueOf(20));
+
+    assertEquals(1, commands.size());
+    assertEquals(Boolean.FALSE, commands.get(0).getEnabled());
   }
 
   @Test

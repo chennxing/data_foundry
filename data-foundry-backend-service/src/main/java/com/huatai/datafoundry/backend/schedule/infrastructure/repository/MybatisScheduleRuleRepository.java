@@ -61,6 +61,16 @@ public class MybatisScheduleRuleRepository implements ScheduleRuleRepository {
   }
 
   @Override
+  public int markXxlSyncPending(String id) {
+    return mapper.markXxlSyncPending(id);
+  }
+
+  @Override
+  public int markXxlSyncPendingByWideTable(String requirementId, String wideTableId) {
+    return mapper.markXxlSyncPendingByWideTable(requirementId, wideTableId);
+  }
+
+  @Override
   public int markXxlSyncing(String id) {
     return mapper.markXxlSyncing(id);
   }

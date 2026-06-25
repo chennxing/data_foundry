@@ -14,6 +14,8 @@ public interface TaskGroupRepository {
 
   TaskGroup findNextPendingByScheduleRule(String scheduleRuleId);
 
+  boolean existsPendingScheduledTaskGroupWithFetchTasks(String scheduleRuleId);
+
   List<TaskGroup> listAll();
 
   List<TaskGroup> listByIds(List<String> taskGroupIds);

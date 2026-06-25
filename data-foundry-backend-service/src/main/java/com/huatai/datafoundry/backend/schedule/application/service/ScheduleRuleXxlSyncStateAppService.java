@@ -2,6 +2,7 @@ package com.huatai.datafoundry.backend.schedule.application.service;
 
 import com.huatai.datafoundry.backend.schedule.domain.model.ScheduleRule;
 import com.huatai.datafoundry.backend.schedule.domain.repository.ScheduleRuleRepository;
+import com.huatai.datafoundry.backend.task.domain.repository.TaskGroupRepository;
 import com.huatai.datafoundry.contract.scheduler.XxlJobRuleSyncCommand;
 import com.huatai.datafoundry.contract.scheduler.XxlJobRuleSyncResult;
 import java.time.LocalDateTime;
@@ -18,9 +19,12 @@ public class ScheduleRuleXxlSyncStateAppService {
   private static final int MAX_ERROR_LENGTH = 2000;
 
   private final ScheduleRuleRepository repository;
+  private final TaskGroupRepository taskGroupRepository;
 
-  public ScheduleRuleXxlSyncStateAppService(ScheduleRuleRepository repository) {
+  public ScheduleRuleXxlSyncStateAppService(
+      ScheduleRuleRepository repository, TaskGroupRepository taskGroupRepository) {
     this.repository = repository;
+    this.taskGroupRepository = taskGroupRepository;
   }
 
   @Transactional
@@ -102,13 +106,19 @@ public class ScheduleRuleXxlSyncStateAppService {
         continue;
       }
       if (repository.markXxlSyncing(rule.getId()) == 1) {
-        commands.add(toCommand(rule));
+        commands.add(toCommand(rule, isXxlRuntimeEnabled(rule)));
       }
     }
     return commands;
   }
 
-  private static XxlJobRuleSyncCommand toCommand(ScheduleRule rule) {
+  private boolean isXxlRuntimeEnabled(ScheduleRule rule) {
+    return Boolean.TRUE.equals(rule.getEnabled())
+        && taskGroupRepository != null
+        && taskGroupRepository.existsPendingScheduledTaskGroupWithFetchTasks(rule.getId());
+  }
+
+  private static XxlJobRuleSyncCommand toCommand(ScheduleRule rule, boolean effectiveEnabled) {
     XxlJobRuleSyncCommand command = new XxlJobRuleSyncCommand();
     command.setRuleId(rule.getId());
     command.setRuleName(rule.getRuleName());
@@ -120,7 +130,7 @@ public class ScheduleRuleXxlSyncStateAppService {
     command.setTriggerTime(
         rule.getTriggerTime() != null ? rule.getTriggerTime().toString() : null);
     command.setJobHandler(rule.getXxlJobHandler());
-    command.setEnabled(rule.getEnabled());
+    command.setEnabled(Boolean.valueOf(effectiveEnabled));
     command.setExistingJobId(rule.getXxlJobId());
     command.setExistingJobGroup(rule.getXxlJobGroup());
     command.setExistingExecutorName(rule.getXxlExecutorName());

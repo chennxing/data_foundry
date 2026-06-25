@@ -2,6 +2,7 @@ package com.huatai.datafoundry.backend.schedule.application.service;
 
 import com.huatai.datafoundry.backend.requirement.domain.model.WideTable;
 import com.huatai.datafoundry.backend.schedule.domain.model.ScheduleRule;
+import com.huatai.datafoundry.backend.schedule.domain.repository.ScheduleRuleRepository;
 import com.huatai.datafoundry.backend.schedule.domain.service.SchedulePlanningTimeCalculator;
 import com.huatai.datafoundry.backend.task.domain.model.TaskGroup;
 import com.huatai.datafoundry.backend.task.domain.model.WideTablePlanSource;
@@ -16,14 +17,17 @@ public class SchedulePlanRefreshAppService {
   private final ScheduleRuleSyncAppService scheduleRuleSyncAppService;
   private final SchedulePlanningTimeCalculator schedulePlanningTimeCalculator;
   private final TaskGroupRepository taskGroupRepository;
+  private final ScheduleRuleRepository scheduleRuleRepository;
 
   public SchedulePlanRefreshAppService(
       ScheduleRuleSyncAppService scheduleRuleSyncAppService,
       SchedulePlanningTimeCalculator schedulePlanningTimeCalculator,
-      TaskGroupRepository taskGroupRepository) {
+      TaskGroupRepository taskGroupRepository,
+      ScheduleRuleRepository scheduleRuleRepository) {
     this.scheduleRuleSyncAppService = scheduleRuleSyncAppService;
     this.schedulePlanningTimeCalculator = schedulePlanningTimeCalculator;
     this.taskGroupRepository = taskGroupRepository;
+    this.scheduleRuleRepository = scheduleRuleRepository;
   }
 
   public int refresh(WideTable wideTable) {
@@ -41,13 +45,16 @@ public class SchedulePlanRefreshAppService {
         taskGroupRepository.listByRequirementAndWideTable(
             wideTable.getRequirementId(), wideTable.getId());
     if (taskGroups == null || taskGroups.isEmpty()) {
+      markWideTableRulesPending(wideTable);
       return 0;
     }
     int updated = 0;
+    boolean hasPendingScheduledTaskGroup = false;
     for (TaskGroup taskGroup : taskGroups) {
       if (!isPendingScheduledTaskGroup(taskGroup)) {
         continue;
       }
+      hasPendingScheduledTaskGroup = true;
       ScheduleRule rule = resolveRule(taskGroup, rulesByIndicatorGroup);
       if (rule == null) {
         continue;
@@ -62,7 +69,19 @@ public class SchedulePlanRefreshAppService {
           taskGroupRepository.updatePendingSchedule(
               taskGroup.getId(), rule.getId(), scheduledAt);
     }
+    markWideTableRulesPending(wideTable);
+    if (!hasPendingScheduledTaskGroup) {
+      return updated;
+    }
     return updated;
+  }
+
+  private void markWideTableRulesPending(WideTable wideTable) {
+    if (scheduleRuleRepository == null || wideTable == null) {
+      return;
+    }
+    scheduleRuleRepository.markXxlSyncPendingByWideTable(
+        wideTable.getRequirementId(), wideTable.getId());
   }
 
   private static boolean isPendingScheduledTaskGroup(TaskGroup taskGroup) {

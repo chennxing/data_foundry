@@ -312,6 +312,7 @@ public class TaskPlanAppServiceTest {
             null,
             null,
             ruleSyncAppService,
+            null,
             new SchedulePlanningTimeCalculator(),
             new ObjectMapper());
 
@@ -373,6 +374,7 @@ public class TaskPlanAppServiceTest {
             null,
             null,
             ruleSyncAppService,
+            null,
             new SchedulePlanningTimeCalculator(),
             new ObjectMapper());
 
@@ -459,6 +461,7 @@ public class TaskPlanAppServiceTest {
             null,
             null,
             ruleSyncAppService,
+            null,
             new SchedulePlanningTimeCalculator(),
             new ObjectMapper());
 
@@ -532,6 +535,7 @@ public class TaskPlanAppServiceTest {
             null,
             null,
             ruleSyncAppService,
+            null,
             new SchedulePlanningTimeCalculator(),
             new ObjectMapper());
 
@@ -595,6 +599,7 @@ public class TaskPlanAppServiceTest {
             null,
             null,
             ruleSyncAppService,
+            null,
             new SchedulePlanningTimeCalculator(),
             new ObjectMapper());
 
@@ -664,6 +669,7 @@ public class TaskPlanAppServiceTest {
             null,
             null,
             ruleSyncAppService,
+            null,
             new SchedulePlanningTimeCalculator(),
             new ObjectMapper());
 
